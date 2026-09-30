@@ -674,15 +674,13 @@ a:not(.btn):hover {
 /* Footer */
 
 .footer {
-  max-width: 75ch;
-  margin-top: 48px;
-  padding-top: 14px;
-  border-top: 2px solid var(--ink);
+  margin-top: 56px;
   font-size: 0.88rem;
+  color: var(--ink-soft);
 }
 
 .footer p {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
 
 /* Motion */

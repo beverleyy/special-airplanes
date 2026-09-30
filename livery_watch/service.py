@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from collections import Counter
 from typing import Any, Callable
 
 from . import config
@@ -41,6 +42,7 @@ class LiveryWatch:
         self._boards = TtlCache()
         self._live = TtlCache()
         self._tails = TtlCache()
+        self._airline_names: dict[str, str] = {}
 
     # Registry
 
@@ -73,6 +75,8 @@ class LiveryWatch:
         self._sleep(config.PAGE_DELAY_SECONDS)
         departures, cut_d = self._read_board(code, "departures", now, airport)
         flights = sorted(arrivals + departures, key=lambda f: f["ts"])
+        self._airline_names.update(common_airline_names(flights))
+        use_common_names(flights, self._airline_names)
         result = {
             "airport": airport,
             "fetchedAt": now,
@@ -168,8 +172,31 @@ class LiveryWatch:
                    and (f["dep"]["ts"] or f["arr"]["ts"]) <= now + config.TAIL_HISTORY_AFTER_SECONDS]
         flights.sort(key=lambda f: f["dep"]["ts"] or f["arr"]["ts"])
         flights = flights[:config.MAX_TAIL_FLIGHTS]
+        use_common_names(flights, self._airline_names)
         self._tails.put(key, flights)
         return flights
+
+
+NAME_FIELDS = (("airline", "airlineName"), ("operatorCode", "operator"))
+
+
+def common_airline_names(flights: list[Json]) -> dict[str, str]:
+    """Each airline's most common name. Special-livery aircraft often carry an extra note in
+    their airline name, but they're a minority, so the plain name wins."""
+    by_code: dict[str, Counter[str]] = {}
+    for flight in flights:
+        for code_field, name_field in NAME_FIELDS:
+            if flight.get(code_field) and flight.get(name_field):
+                by_code.setdefault(flight[code_field], Counter())[flight[name_field]] += 1
+    return {code: min(names.items(), key=lambda item: (-item[1], len(item[0])))[0]
+            for code, names in by_code.items()}
+
+
+def use_common_names(flights: list[Json], names: dict[str, str]) -> None:
+    for flight in flights:
+        for code_field, name_field in NAME_FIELDS:
+            if flight.get(code_field) in names:
+                flight[name_field] = names[flight[code_field]]
 
 
 def _airport_code(code: str) -> str:

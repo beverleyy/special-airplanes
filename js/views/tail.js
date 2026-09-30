@@ -1,3 +1,4 @@
+import { operatorNote } from "../flights.js";
 import { escapeHtml, parseLocal } from "../format.js";
 import { externalLink, flightAwareUrl, fr24AircraftUrl, photosUrl } from "../links.js";
 import { fact } from "./common.js";
@@ -83,7 +84,8 @@ export function tailHtml(result, { airportCode, isDemo }) {
   if (!result.special) return notSpecialHtml(result.reg, isDemo);
   const { entry, flights } = result;
   const model = flights.find(f => f.model)?.model || entry.type;
-  const airline = flights.find(f => f.airlineName)?.airlineName || entry.airline;
+  const airline = entry.airline || flights.find(f => f.airlineName)?.airlineName;
+  const operatedBy = operatorNote(airline, flights.find(f => f.operator));
   const links = [
     externalLink(fr24AircraftUrl(entry.reg), "FR24"),
     externalLink(flightAwareUrl(entry.reg), "FlightAware"),
@@ -94,6 +96,7 @@ export function tailHtml(result, { airportCode, isDemo }) {
     <div class="tail-card__body">
       <div class="facts">
         ${fact("Airline", escapeHtml(airline || "–"))}
+        ${operatedBy ? fact("Operated by", escapeHtml(operatedBy)) : ""}
         ${fact("Aircraft", escapeHtml(model || "–"))}
         ${fact("More", links)}
       </div>

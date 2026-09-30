@@ -85,6 +85,7 @@ function cardHtml(visit, live, today) {
       </div>
       <div class="facts">
         ${fact("Airline", escapeHtml(visit.airlineName || "–"))}
+        ${visit.operatedBy ? fact("Operated by", escapeHtml(visit.operatedBy)) : ""}
         ${fact("Aircraft", escapeHtml(visit.model || entry.type || "–"))}
         ${fact("Tail", externalLink(fr24AircraftUrl(reg), reg))}
         ${groundTime}

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { startClockAt } from "../js/clock.js";
-import { buildVisits, countdown, family, isGone, selectVisits, situation } from "../js/flights.js";
+import { buildVisits, countdown, family, isGone, operatorNote, selectVisits, situation } from "../js/flights.js";
 import { formatDuration, parseLocal } from "../js/format.js";
 
 const NOW = 1_800_000_000;
@@ -29,6 +29,24 @@ test("buildVisits pairs an arrival with the next departure", () => {
   assert.equal(visits[0].dep.ts, NOW + 90 * 60);
   assert.equal(visits[1].dep, null);
   assert.equal(visits[0].family, "787");
+});
+
+test("the livery database's airline name wins over Flightradar24's", () => {
+  const fromDatabase = new Map([["JA894A", { reg: "JA894A", airline: "ANA", livery: "Pikachu Jet NH", type: "787-9" }]]);
+  const [visit] = buildVisits([flight("arr", 10, { airlineName: "All Nippon Airways (Pikachu Jet)" })], fromDatabase);
+  assert.equal(visit.airlineName, "ANA");
+  const [fallback] = buildVisits([flight("arr", 10, { airlineName: "All Nippon Airways" })], registry);
+  assert.equal(fallback.airlineName, "All Nippon Airways");
+});
+
+test("operatorNote shows the operator only when another airline flies the aircraft", () => {
+  const regional = { airline: "AA", operator: "SkyWest Airlines", operatorCode: "OO" };
+  assert.equal(operatorNote("American Airlines", regional), "SkyWest Airlines");
+  assert.equal(operatorNote("ANA", { airline: "NH", operator: "All Nippon Airways", operatorCode: "NH" }), "");
+  assert.equal(operatorNote("airBaltic", { airline: "LH", operator: "airBaltic", operatorCode: "BT" }), "");
+  assert.equal(operatorNote("Alaska", { operator: "Alaska Airlines" }), "");
+  assert.equal(operatorNote("Alaska", { operator: "Horizon Air" }), "Horizon Air");
+  assert.equal(operatorNote("Alaska", {}), "");
 });
 
 test("situation uses live positions only for the visit happening now", () => {

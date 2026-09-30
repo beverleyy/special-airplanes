@@ -79,7 +79,8 @@ export function buildVisits(flights, registry) {
       model,
       reg: (arr || dep).reg,
       family: family(model || entry.type),
-      airlineName: arr?.airlineName || dep?.airlineName || (arr || dep).airline || "",
+      airlineName: entry.airline || arr?.airlineName || dep?.airlineName || (arr || dep).airline || "",
+      operatedBy: operatorNote(entry.airline || (arr || dep).airlineName, dep || arr),
     };
   }));
 }
@@ -115,6 +116,25 @@ export function activeRegs(visits) {
     .sort((a, b) => a.distance - b.distance)
     .slice(0, MAX_LIVE_LOOKUPS)
     .map(x => x.reg);
+}
+
+// Operator
+
+const GENERIC_NAME_WORDS = /\b(the|air ?lines?|airways|aviation|group|inc|ltd|co)\b/g;
+const simplifyName = name => (name || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ")
+  .replace(GENERIC_NAME_WORDS, " ").replace(/\s+/g, " ").trim();
+
+function sameAirline(a, b) {
+  const x = simplifyName(a);
+  const y = simplifyName(b);
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
+}
+
+/** The operator's name when another airline flies the aircraft, e.g. SkyWest for American Eagle; else "". */
+export function operatorNote(airlineName, flight) {
+  if (!flight?.operator) return "";
+  if (flight.operatorCode && flight.airline && flight.operatorCode === flight.airline) return "";
+  return sameAirline(flight.operator, airlineName) ? "" : flight.operator;
 }
 
 // Status

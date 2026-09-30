@@ -46,3 +46,8 @@ This thingy has no dependencies other than a fairly modern Python installation (
 
 **Demo data:** Due to the two abovementioned constraints, in order to put this thingy on my portfolio and hopefully make myself more attractive to the airlines, I had to build a small demo dataset just to show that the thingy works. The `demo-data.json` file only saves, for SFO specifically, the special-liveried flights on 30 Sep 2026 and the live positions for the specific airplanes running those flights at like 11.27am PST that day. The beauty of using Github is that Pages only serves static files, so I check first for a live instance of the app and if there isn't one then it switches to the demo mode and just uses my small sample dataset.
 
+## To-do list
+
+* At some point I want to add unusual airplane types and not just liveries (for example there's 2 A380s at SFO every day, sometimes 3, out of hella ton of planes, would be cool to show what time they're coming in)
+* Maybe when I'm rich I'll buy a FR24 API subscription or find some other equivalent API so I can put this thingy live
+* The query can be pretty slow and that's probably because of the search being basically a scrape. I should do something about that

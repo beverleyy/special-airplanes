@@ -8,6 +8,7 @@ def board_item(**times):
         "identification": {"number": {"default": "NH7"}},
         "airline": {"name": "ANA (Pikachu Jet NH)", "code": {"iata": "nh"}},
         "aircraft": {"registration": "JA894A", "model": {"text": "Boeing 787-9"}},
+        "owner": {"name": "ANA Wings", "code": {"iata": "eh"}},
         "airport": {"origin": {"code": {"iata": "NRT"}, "name": "Tokyo Narita"}},
         "time": times,
         "status": {"generic": {"status": {"text": "scheduled"}}},
@@ -29,6 +30,7 @@ class BoardFlightTest(unittest.TestCase):
         flight = parse_board_flight(board_item(scheduled={"arrival": 3600}), "arrivals", 0)
         self.assertEqual((flight["dir"], flight["airline"], flight["airlineName"], flight["other"]),
                          ("arr", "NH", "ANA", "NRT"))
+        self.assertEqual((flight["operator"], flight["operatorCode"]), ("ANA Wings", "EH"))
 
     def test_skips_cancelled(self):
         item = board_item(scheduled={"arrival": 1000})
@@ -66,6 +68,10 @@ class LiveAndAirlineTest(unittest.TestCase):
         self.assertEqual(clean_airline("Singapore Airlines (Star Alliance)"), "Singapore Airlines")
         self.assertEqual(clean_airline("Lufthansa (100)"), "Lufthansa")
         self.assertEqual(clean_airline("American Eagle (Republic Airways)"), "American Eagle (Republic Airways)")
+        self.assertEqual(clean_airline('AirAsia ("Just coastin\' in Malaysia" special colours / Visit Truly Asia Malaysia 2026'),
+                         "AirAsia")
+        self.assertEqual(clean_airline('AirAsia "Just coastin\' in Malaysia" special colours / Visit Truly Asia Malaysia 2026'),
+                         "AirAsia")
 
 
 if __name__ == "__main__":

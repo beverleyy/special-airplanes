@@ -28,6 +28,8 @@ HEADERS = {
 }
 _BLOCKED = (401, 402, 403, 451)
 _BRACKETED = re.compile(r"\s*[\(\[]([^\)\]]*)[\)\]]")
+_UNCLOSED_BRACKET = re.compile(r"\s*[\(\[][^\)\]]*$")
+_QUOTE = re.compile(r"[\"“”„]")
 _LIVERY_WORDS = re.compile(
     r"\b(livery|liveries|colou?rs|scheme|c/s|retro|special|heritage|jet|sticker|decal|titles|logo|"
     r"anniversary|years|alliance|oneworld|skyteam)\b", re.I)
@@ -95,12 +97,20 @@ def _is_livery_note(text: str) -> bool:
 def clean_airline(name: str | None) -> str:
     """Drop livery notes FR24 appends: 'Alaska Airlines (Seattle Kraken Livery)' -> 'Alaska Airlines'."""
     kept = _BRACKETED.sub(lambda m: "" if _is_livery_note(m.group(1)) else m.group(0), name or "")
-    return " ".join(kept.split())
+    kept = _UNCLOSED_BRACKET.sub("", kept)
+    kept = _QUOTE.split(kept, maxsplit=1)[0]
+    return " ".join(kept.split()).strip(" -–/|:")
 
 
 def _airline_name(flight: Json) -> str:
     return clean_airline(dig(flight, "airline", "name") or dig(flight, "airline", "short")
                          or dig(flight, "owner", "name") or "")
+
+
+def _operator(flight: Json) -> dict[str, str]:
+    """The airline flying the aircraft, which FR24 calls the owner."""
+    return {"operator": clean_airline(dig(flight, "owner", "name") or ""),
+            "operatorCode": (dig(flight, "owner", "code", "iata") or "").upper()}
 
 
 def _generic_status(flight: Json) -> str:
@@ -145,6 +155,7 @@ def parse_board_flight(item: Json, mode: str, offset: int) -> Json | None:
         "number": dig(flight, "identification", "number", "default") or dig(flight, "identification", "callsign") or "",
         "airline": (dig(flight, "airline", "code", "iata") or "").upper(),
         "airlineName": _airline_name(flight),
+        **_operator(flight),
         "other": dig(other, "code", "iata") or dig(other, "code", "icao") or "",
         "otherName": other.get("name") or "",
         "reg": dig(flight, "aircraft", "registration") or "",
@@ -196,7 +207,9 @@ def parse_history_flight(flight: Json) -> Json | None:
 
     return {
         "number": dig(flight, "identification", "number", "default") or dig(flight, "identification", "callsign") or "",
+        "airline": (dig(flight, "airline", "code", "iata") or "").upper(),
         "airlineName": _airline_name(flight),
+        **_operator(flight),
         "model": dig(flight, "aircraft", "model", "text") or "",
         "origin": place(origin),
         "dest": place(dest),

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from livery_watch.errors import LiveryWatchError
 from livery_watch.liveries import LiveryImporter
-from livery_watch.service import LiveryWatch
+from livery_watch.service import LiveryWatch, common_airline_names
 from livery_watch.store import Store
 
 NOW = int(time.time())
@@ -66,6 +66,15 @@ class BoardTest(unittest.TestCase):
     def test_tail_lookup_for_unknown_tail(self):
         app = self.make_app({"arrivals": [[]], "departures": [[]]})
         self.assertEqual(app.tail("n12345"), {"special": False, "reg": "N12345"})
+
+
+class AirlineNameTest(unittest.TestCase):
+    def test_most_common_name_wins(self):
+        flights = [{"airline": "AK", "airlineName": "AirAsia"},
+                   {"airline": "AK", "airlineName": "AirAsia"},
+                   {"airline": "AK", "airlineName": "AirAsia Just coastin' in Malaysia"},
+                   {"airline": "SQ", "airlineName": "Singapore Airlines"}]
+        self.assertEqual(common_airline_names(flights), {"AK": "AirAsia", "SQ": "Singapore Airlines"})
 
 
 if __name__ == "__main__":
