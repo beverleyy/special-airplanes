@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Which special-livery aircraft will be at an airport in the next 24 hours, and what they're doing right now.">
+  <title>Livery Watch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800;900&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <main class="page">
+    <h1 class="visually-hidden">Livery Watch</h1>
+
+    <form class="search" id="airport-form">
+      <div class="search__panel search__panel--location">
+        <label class="search__label" for="airport">Airport</label>
+        <input class="search__airport" id="airport" name="airport" maxlength="3" placeholder="SFO"
+               autocomplete="off" spellcheck="false" aria-describedby="airport-hint">
+        <span class="search__hint" id="airport-hint">IATA code</span>
+      </div>
+      <div class="search__panel search__panel--direction">
+        <span class="search__arrow" aria-hidden="true">⇅</span>
+        <p class="search__title">Special liveries in the next 24 hours</p>
+      </div>
+      <button class="search__submit" id="airport-submit" type="submit">Find liveries</button>
+    </form>
+
+    <div class="toolbar">
+      <span id="updated"></span>
+      <button class="btn btn--small" id="refresh" type="button" hidden>Refresh flights</button>
+    </div>
+
+    <p class="credit" id="credit"></p>
+
+    <form class="tail-search" id="tail-form">
+      <label class="field">
+        <span class="field__label">Look up a special livery by tail number</span>
+        <input class="field__input field__input--upper" id="tail" name="tail" placeholder="e.g. JA894A"
+               autocomplete="off" spellcheck="false" maxlength="10">
+      </label>
+      <button class="btn" id="tail-submit" type="submit">Look up tail</button>
+    </form>
+    <div id="tail-result" aria-live="polite"></div>
+
+    <div class="filters" id="filters" hidden>
+      <div class="chip-row" id="direction-filter" role="group" aria-label="Show"></div>
+      <div class="chip-row" id="type-filter" role="group" aria-label="Aircraft type"></div>
+    </div>
+
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="summary" id="summary"></div>
+    <div class="results" id="results"></div>
+
+    <footer class="footer">
+      <p>
+        Special livery data:
+        <a href="https://airportwebcams.net/special-liveries/" target="_blank" rel="noopener noreferrer">Special Liveries Database</a>,
+        compiled and maintained by AirportWebcams.net.<span id="local-note"> It's saved only on this computer; please don't republish it.</span>
+      </p>
+      <p>
+        Flight schedules and tail assignments: Flightradar24. Airlines usually assign tails about a day ahead,
+        so flights later in the window may not have one yet.
+      </p>
+    </footer>
+  </main>
+</body>
+</html>

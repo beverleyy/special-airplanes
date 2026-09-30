@@ -1,0 +1,34 @@
+"""Settings."""
+from pathlib import Path
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+WEB_DIR = PROJECT_DIR
+DATA_FILE = PROJECT_DIR / "livery_watch_data.json"
+DEMO_FILE = PROJECT_DIR / "demo-data.json"
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8024
+LIVERY_SOURCE = "https://airportwebcams.net/special-liveries/"
+
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+)
+
+LOOKAHEAD_SECONDS = 24 * 3600
+LOOKBACK_SECONDS = 3 * 3600
+BOARD_CACHE_SECONDS = 5 * 60
+MIN_REFRESH_SECONDS = 60
+LIVE_CACHE_SECONDS = 30
+TAIL_CACHE_SECONDS = 2 * 60
+
+PAGE_DELAY_SECONDS = 1.5
+LIVE_DELAY_SECONDS = 0.4
+MAX_BOARD_PAGES = 10
+MAX_LIVE_LOOKUPS = 8
+MAX_TAIL_FLIGHTS = 15
+MAX_SNAPSHOT_TAILS = 15
+
+TAIL_HISTORY_BEFORE_SECONDS = 6 * 3600
+TAIL_HISTORY_AFTER_SECONDS = 3 * 86400
+DELAYED_AFTER_SECONDS = 15 * 60
