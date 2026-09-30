@@ -1,91 +1,48 @@
 # Livery Watch
 
-Which special-livery aircraft will be at an airport in the next 24 hours, and what's happening with them right now. Built for watching planespotting livestreams: open it next to an SFO stream and you know when the Pikachu Jet is about to show up on runway 28.
+Why does this thing exist? I spent too much of my summer watching live SFO planespotting and got addicted, but when I had to go to class again I realized I was missing a lot of interesting airplanes landing at the airport. So I vibecoded this tool to tell me when I need to pull up the stream during my lecture so I can see D-ABYN on short final. 
+
+In other words, what interesting paint jobs will be at a specific airport in the next 24 hours? What are these interesting airplanes doing right now?
 
 ![Livery Watch showing special liveries at SFO](screenshot.png)
 
-**[Try the demo](https://YOUR-USERNAME.github.io/livery-watch/)** (a recorded moment at SFO)
-
 ## What it does
 
-- Reads an airport's arrivals and departures for the next 24 hours and picks out aircraft in special liveries: retro and heritage schemes, sports teams, Pokémon jets, alliance colors, and more.
-- Pairs each aircraft's arrival with its next departure, so you can see how long it's on the ground.
-- Splits results into **Now** (on the ground, moving, or due within 30 minutes) and **Later**.
-- For aircraft moving around right now, shows a plain status: on approach, landing, taxiing to the gate, waiting to depart, taking off.
-- Filters by arrivals or departures and by aircraft type.
-- Looks up a special livery by tail number and shows that aircraft's recent and upcoming flights at every airport. Tails that aren't special liveries get quick links to Flightradar24 and FlightAware instead.
+- Grab the arrival/departure data for a specified airport from FR24 and pick out special-liveried tail numbers, including retro jets, heritage jets, black LH queens, pokemon planes...
+- Look up a special-liveried airplane by tail number and get its recent/upcoming flights at all airports
+
+**[Try the demo](https://beverleyy.github.io/special-airplanes/)** featuring a recorded moment at SFO on 30 Sep 2026.
 
 ## Run it with live data
 
-Needs Python 3.9 or newer. No packages to install.
-
 ```
+git clone https://github.com/beverleyy/special-airplanes
+cd special-airplanes
 python3 -m livery_watch
 ```
 
-It opens `http://localhost:8024`. On startup it downloads the latest special livery database and saves it to `livery_watch_data.json`, which is git-ignored and stays on your machine.
+This thingy has no dependencies other than a fairly modern Python installation (Python >3.9) and a functional web browser. It will open the app in the browser, if it doesn't, go to `http://localhost:8024`. The following options are available to customize the app run:
 
 | Option | What it does |
 | --- | --- |
-| `--host 0.0.0.0` | Listen on your network, e.g. to use it from your phone |
+| `--host 0.0.0.0` | Listen on your network, for example to use this from a mobile device |
 | `--port 9000` | Use a different port |
 | `--no-browser` | Don't open a browser window |
-| `--source URL` | Also import liveries from another page with a livery table (repeatable) |
-| `--snapshot SFO` | Record `demo-data.json` for the demo, then exit |
-| `--verbose` | Log every request |
+| `--source URL` | Also import liveries from another page with a livery table |
+| `--verbose` | Log every request made to the databases |
 
-### Use it from your phone
+### From mobile
 
-- **On your home Wi-Fi:** run `python3 -m livery_watch --host 0.0.0.0 --no-browser`, then open `http://<your-computer's-IP>:8024` on your phone.
-- **From anywhere:** run it on an always-on machine (a Raspberry Pi works well) and install [Tailscale](https://tailscale.com) on it and your phone to reach it privately.
+- **On home wifi:** run `python3 -m livery_watch --host 0.0.0.0 --no-browser`, then open `http://<your-computer's-IP>:8024` on the other device.
+- **Elsewhere:** It can be run on an always-on machine (I use my office workstation which is always on because electricity is free, but a Raspberry Pi works well too) and install [Tailscale](https://tailscale.com) on both it and the mobile device to reach the app instance that's living on the machine.
 
-## The demo
+## The (not so) fine print
 
-GitHub Pages only serves static files, so the page first checks for a Livery Watch server. If there isn't one, it switches to demo mode and never contacts a flight or livery data source.
+### THIS IS NOT MEANT TO BE RUN AS AN AUTOMATION! PLEASE READ!
 
-The demo replays a real moment recorded at an airport:
+**Special livery data:** I pulled from the [Special Liveries Database](https://airportwebcams.net/special-liveries/), compiled and maintained by AirportWebcams.net. The app reorganizes the data from that page into a JSON file so it can be read, and caches this JSON file locally. I strongly recommend NOT republishing this data, which is also why I only have a small demo dataset in this repository.
 
-```
-python3 -m livery_watch --snapshot SFO
-```
+**Flight schedules, tail assignments, and live positions:** I use [Flightradar24](https://flightradar24.com) to track airplanes. However, I am poor and I don't have access to the API. The reader can draw their own conclusions as to what this means. In other unrelated news, FR24's terms don't permit automations, which is also why I don't have a live demo available. If run locally the app caches the results once when querying the airport and only requests new data for that airport when the user wants it or when the data has become too stale.
 
-This saves `demo-data.json` with only what the demo shows: the special-livery flights on that day's boards, the few livery entries that matched them, live positions for aircraft moving at that moment, those aircraft's schedules, and the board totals. Commit it with the rest of the site. The demo's clock starts at the recorded time, so countdowns and statuses read exactly as they did then. Record at a busy time of day. Without `demo-data.json`, the demo uses a small built-in sample.
+**Demo data:** Due to the two abovementioned constraints, in order to put this thingy on my portfolio and hopefully make myself more attractive to the airlines, I had to build a small demo dataset just to show that the thingy works. The `demo-data.json` file only saves, for SFO specifically, the special-liveried flights on 30 Sep 2026 and the live positions for the specific airplanes running those flights at like 11.27am PST that day. The beauty of using Github is that Pages only serves static files, so I check first for a live instance of the app and if there isn't one then it switches to the demo mode and just uses my small sample dataset.
 
-To publish, push this repo to GitHub, then go to **Settings → Pages** and deploy from the `main` branch root.
-
-## Project layout
-
-```
-index.html              Page markup
-css/style.css           Styles
-js/
-  main.js               Controller: state, events, rendering
-  api.js                Data from the Livery Watch server
-  demo.js, sample.js    Data for the static demo
-  flights.js            Visits, statuses, and filtering
-  format.js, clock.js, links.js
-  views/                HTML for each part of the page
-livery_watch/           Python package
-  cli.py                Command line
-  server.py             Static files and JSON API
-  service.py            Boards, live positions, tail lookups
-  fr24.py               Flightradar24 client and parsing
-  liveries.py           Livery database import
-  store.py              Local data file
-  snapshot.py           Demo recordings
-tests/                  Python and JavaScript tests
-```
-
-## Tests
-
-```
-python3 -m unittest discover -s tests -t .
-npm test
-```
-
-`npm test` only needs Node 20 or newer; there are no dependencies to install.
-
-## Credits and data
-
-- **Special livery data:** the [Special Liveries Database](https://airportwebcams.net/special-liveries/), compiled and maintained by AirportWebcams.net. Livery Watch keeps a local copy for personal use; don't republish it. The demo includes only the few entries that appear in its recording, with credit.
-- **Flight schedules, tail assignments, and live positions:** Flightradar24, through the unofficial endpoints behind their website. These are undocumented, can change without notice, and Flightradar24's terms don't permit automated access, so keep it to light personal use. Livery Watch caches results and paces its requests.
