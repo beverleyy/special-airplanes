@@ -27,8 +27,10 @@ HEADERS = {
     "Referer": "https://www.flightradar24.com/",
 }
 _BLOCKED = (401, 402, 403, 451)
-_LIVERY_NOTE = re.compile(
-    r"\s*[\(\[][^\)\]]*\b(livery|liveries|colou?rs|scheme|c/s|retro|special|heritage|jet)\b[^\)\]]*[\)\]]", re.I)
+_BRACKETED = re.compile(r"\s*[\(\[]([^\)\]]*)[\)\]]")
+_LIVERY_WORDS = re.compile(
+    r"\b(livery|liveries|colou?rs|scheme|c/s|retro|special|heritage|jet|sticker|decal|titles|logo|"
+    r"anniversary|years|alliance|oneworld|skyteam)\b", re.I)
 
 Json = dict[str, Any]
 
@@ -85,9 +87,15 @@ class FR24Client:
 
 # Parsing
 
+def _is_livery_note(text: str) -> bool:
+    """Operator notes are short names like '(SkyWest)'; livery notes are longer or mention the paint."""
+    return bool(_LIVERY_WORDS.search(text)) or len(text.split()) >= 3 or any(c.isdigit() for c in text)
+
+
 def clean_airline(name: str | None) -> str:
     """Drop livery notes FR24 appends: 'Alaska Airlines (Seattle Kraken Livery)' -> 'Alaska Airlines'."""
-    return " ".join(_LIVERY_NOTE.sub("", name or "").split())
+    kept = _BRACKETED.sub(lambda m: "" if _is_livery_note(m.group(1)) else m.group(0), name or "")
+    return " ".join(kept.split())
 
 
 def _airline_name(flight: Json) -> str:

@@ -62,6 +62,10 @@ class LiveAndAirlineTest(unittest.TestCase):
     def test_clean_airline(self):
         self.assertEqual(clean_airline("Alaska Airlines (Seattle Kraken Livery)"), "Alaska Airlines")
         self.assertEqual(clean_airline("Delta Connection (SkyWest)"), "Delta Connection (SkyWest)")
+        self.assertEqual(clean_airline("Finnair (Bringing Us Together Since 1923 Sticker)"), "Finnair")
+        self.assertEqual(clean_airline("Singapore Airlines (Star Alliance)"), "Singapore Airlines")
+        self.assertEqual(clean_airline("Lufthansa (100)"), "Lufthansa")
+        self.assertEqual(clean_airline("American Eagle (Republic Airways)"), "American Eagle (Republic Airways)")
 
 
 if __name__ == "__main__":
