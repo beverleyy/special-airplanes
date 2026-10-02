@@ -87,9 +87,11 @@ function cardHtml(visit, live, today) {
         ${fact("Airline", escapeHtml(visit.airlineName || "–"))}
         ${visit.operatedBy ? fact("Operated by", escapeHtml(visit.operatedBy)) : ""}
         ${fact("Aircraft", escapeHtml(visit.model || entry.type || "–"))}
-        ${fact("Tail", externalLink(fr24AircraftUrl(reg), reg))}
+        ${fact("Tail", `<button class="link-button" type="button" data-tail="${escapeHtml(reg)}"
+          title="Show this aircraft's schedule">${escapeHtml(reg)}</button>`)}
         ${groundTime}
-        ${fact("More", `${externalLink(flightAwareUrl(reg), "FlightAware")}, ${externalLink(photosUrl(reg), "Photos")}`)}
+        ${fact("More", [externalLink(fr24AircraftUrl(reg), "FR24"), externalLink(flightAwareUrl(reg), "FlightAware"),
+          externalLink(photosUrl(reg), "Photos")].join(", "))}
       </div>
     </div>
   </article>`;

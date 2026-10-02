@@ -45,6 +45,28 @@ a:not(.btn):hover {
   background: var(--taxi-yellow);
 }
 
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  background: var(--taxi-yellow);
+}
+
+.link-button:focus-visible {
+  outline: 3px solid var(--sign-black);
+  outline-offset: 2px;
+}
+
 .page {
   max-width: 1040px;
   margin: 0 auto;
@@ -307,6 +329,10 @@ a:not(.btn):hover {
   font-size: 0.92rem;
 }
 
+.toolbar__jump {
+  margin-left: auto;
+}
+
 .credit {
   max-width: 70ch;
   margin: 18px 0 0;
@@ -320,13 +346,17 @@ a:not(.btn):hover {
   color: var(--hold-red);
 }
 
+.aircraft-search {
+  margin-top: 40px;
+  scroll-margin-top: 20px;
+}
+
 .tail-search {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 8px;
   max-width: 560px;
-  margin-top: 22px;
 }
 
 .tail-search .field {

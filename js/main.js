@@ -25,6 +25,8 @@ const el = {
   tail: $("tail"),
   tailSubmit: $("tail-submit"),
   tailResult: $("tail-result"),
+  aircraftSearch: $("aircraft-search"),
+  jumpToAircraft: $("jump-to-aircraft"),
   filters: $("filters"),
   directionFilter: $("direction-filter"),
   typeFilter: $("type-filter"),
@@ -156,12 +158,20 @@ function savePrefs(changes) {
 
 // Tail lookup
 
+const scrollBehavior = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+
+function showAircraftSearch() {
+  el.aircraftSearch.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+}
+
 async function lookupTail(raw) {
   const reg = raw.trim().toUpperCase();
   if (!reg) {
     el.tail.focus();
     return;
   }
+  el.tail.value = reg;
+  showAircraftSearch();
   el.tailSubmit.disabled = true;
   el.tailResult.innerHTML = `<p>${progress(`Looking up ${reg}…`)}</p>`;
   try {
@@ -174,6 +184,7 @@ async function lookupTail(raw) {
   } catch (error) {
     el.tailResult.innerHTML = holdSign(error.message);
   } finally {
+    showAircraftSearch();
     el.tailSubmit.disabled = false;
   }
 }
@@ -211,6 +222,15 @@ function bindEvents() {
   el.tailResult.addEventListener("click", event => {
     if (event.target.closest("[data-action='close-tail']")) closeTail();
   });
+  el.results.addEventListener("click", event => {
+    const button = event.target.closest("[data-tail]");
+    if (button) lookupTail(button.dataset.tail);
+  });
+  el.jumpToAircraft.addEventListener("click", event => {
+    event.preventDefault();
+    showAircraftSearch();
+    el.tail.focus({ preventScroll: true });
+  });
 }
 
 // Start
@@ -236,13 +256,10 @@ async function start() {
   const airport = getParam("airport") || source.airportCode;
   if (airport) {
     el.airport.value = airport;
-    searchAirport();
+    await searchAirport();
   }
   const tail = getParam("tail");
-  if (tail) {
-    el.tail.value = tail;
-    lookupTail(tail);
-  }
+  if (tail) lookupTail(tail);
 }
 
 start().catch(error => {
