@@ -6,6 +6,7 @@ and can change without notice; keep usage light and personal.
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 import urllib.error
@@ -30,6 +31,7 @@ _BLOCKED = (401, 402, 403, 451)
 _BRACKETED = re.compile(r"\s*[\(\[]([^\)\]]*)[\)\]]")
 _UNCLOSED_BRACKET = re.compile(r"\s*[\(\[][^\)\]]*$")
 _QUOTE = re.compile(r"[\"“”„]")
+_GENERIC_PAINT_WORDS = re.compile(r"\s*\b(special\s+)?(livery|liveries|colou?rs|scheme|c/s)\b", re.I)
 _LIVERY_WORDS = re.compile(
     r"\b(livery|liveries|colou?rs|scheme|c/s|retro|special|heritage|jet|sticker|decal|titles|logo|"
     r"anniversary|years|alliance|oneworld|skyteam)\b", re.I)
@@ -61,11 +63,11 @@ class FR24Client:
                                        "Their site may have changed.") from e
         raise LiveryWatchError("Flightradar24 kept rate limiting. Wait a few minutes and try again.")
 
-    def airport_board(self, code: str, mode: str, page: int, timestamp: int) -> Json:
+    def airport_board(self, code: str, mode: str, page: int, timestamp: int, details: bool = True) -> Json:
+        plugins = [("plugin[]", "schedule")] + ([("plugin[]", "details")] if details else [])
         query = urllib.parse.urlencode([
             ("code", code),
-            ("plugin[]", "schedule"),
-            ("plugin[]", "details"),
+            *plugins,
             ("plugin-setting[schedule][mode]", mode),
             ("plugin-setting[schedule][timestamp]", str(timestamp)),
             ("page", str(page)),
@@ -78,8 +80,18 @@ class FR24Client:
         return self.get_json(f"{API}/flight/list.json?{query}")
 
     def live_feed(self, reg: str) -> Json | None:
+        """Live position of one aircraft, wherever it is."""
+        return self._feed({"reg": reg})
+
+    def live_area(self, lat: float, lon: float, radius_km: float) -> Json | None:
+        """Every tracked aircraft in a box around a point, in one request."""
+        dlat = radius_km / 111.0
+        dlon = radius_km / (111.0 * max(math.cos(math.radians(lat)), 0.1))
+        return self._feed({"bounds": f"{lat + dlat:.3f},{lat - dlat:.3f},{lon - dlon:.3f},{lon + dlon:.3f}"})
+
+    def _feed(self, filters: dict[str, Any]) -> Json | None:
         query = urllib.parse.urlencode({
-            "reg": reg, "faa": 1, "satellite": 1, "mlat": 1, "flarm": 1, "adsb": 1, "gnd": 1, "air": 1,
+            **filters, "faa": 1, "satellite": 1, "mlat": 1, "flarm": 1, "adsb": 1, "gnd": 1, "air": 1,
             "vehicles": 0, "estimated": 1, "maxage": 14400, "gliders": 0, "stats": 0})
         try:
             return self.get_json(f"{LIVE_FEED}?{query}")
@@ -94,17 +106,51 @@ def _is_livery_note(text: str) -> bool:
     return bool(_LIVERY_WORDS.search(text)) or len(text.split()) >= 3 or any(c.isdigit() for c in text)
 
 
+def _tidy_note(note: str) -> str:
+    note = _GENERIC_PAINT_WORDS.sub("", _QUOTE.sub("", note))
+    return " ".join(note.split()).strip(" -–/|:([)]")
+
+
+def split_airline(name: str | None) -> tuple[str, str]:
+    """Separate the livery note FR24 appends to some airline names.
+
+    'Alaska Airlines (Seattle Kraken Livery)' -> ('Alaska Airlines', 'Seattle Kraken')
+    """
+    notes: list[str] = []
+
+    def drop_note(match: re.Match[str]) -> str:
+        if not _is_livery_note(match.group(1)):
+            return match.group(0)
+        notes.append(match.group(1))
+        return ""
+
+    text = _BRACKETED.sub(drop_note, name or "")
+    unclosed = _UNCLOSED_BRACKET.search(text)
+    if unclosed:
+        notes.append(unclosed.group(0))
+        text = text[:unclosed.start()]
+    before_quote, *quoted = _QUOTE.split(text, maxsplit=1)
+    notes.extend(quoted)
+    airline = " ".join(before_quote.split()).strip(" -–/|:")
+    return airline, next((n for n in map(_tidy_note, notes) if n), "")
+
+
 def clean_airline(name: str | None) -> str:
     """Drop livery notes FR24 appends: 'Alaska Airlines (Seattle Kraken Livery)' -> 'Alaska Airlines'."""
-    kept = _BRACKETED.sub(lambda m: "" if _is_livery_note(m.group(1)) else m.group(0), name or "")
-    kept = _UNCLOSED_BRACKET.sub("", kept)
-    kept = _QUOTE.split(kept, maxsplit=1)[0]
-    return " ".join(kept.split()).strip(" -–/|:")
+    return split_airline(name)[0]
+
+
+def _raw_airline_name(flight: Json) -> str:
+    return dig(flight, "airline", "name") or dig(flight, "airline", "short") or dig(flight, "owner", "name") or ""
 
 
 def _airline_name(flight: Json) -> str:
-    return clean_airline(dig(flight, "airline", "name") or dig(flight, "airline", "short")
-                         or dig(flight, "owner", "name") or "")
+    return clean_airline(_raw_airline_name(flight))
+
+
+def _livery_note(flight: Json) -> str:
+    """The livery name FR24 sometimes puts in the airline or operator name, else ''."""
+    return split_airline(_raw_airline_name(flight))[1] or split_airline(dig(flight, "owner", "name"))[1]
 
 
 def _operator(flight: Json) -> dict[str, str]:
@@ -155,6 +201,7 @@ def parse_board_flight(item: Json, mode: str, offset: int) -> Json | None:
         "number": dig(flight, "identification", "number", "default") or dig(flight, "identification", "callsign") or "",
         "airline": (dig(flight, "airline", "code", "iata") or "").upper(),
         "airlineName": _airline_name(flight),
+        "liveryNote": _livery_note(flight),
         **_operator(flight),
         "other": dig(other, "code", "iata") or dig(other, "code", "icao") or "",
         "otherName": other.get("name") or "",
@@ -209,6 +256,7 @@ def parse_history_flight(flight: Json) -> Json | None:
         "number": dig(flight, "identification", "number", "default") or dig(flight, "identification", "callsign") or "",
         "airline": (dig(flight, "airline", "code", "iata") or "").upper(),
         "airlineName": _airline_name(flight),
+        "liveryNote": _livery_note(flight),
         **_operator(flight),
         "model": dig(flight, "aircraft", "model", "text") or "",
         "origin": place(origin),
@@ -219,17 +267,23 @@ def parse_history_flight(flight: Json) -> Json | None:
     }
 
 
-def parse_live(feed: Json | None, reg: str) -> Json | None:
-    """The newest live position for a registration from the map feed, or None if untracked.
+def parse_live_all(feed: Json | None) -> dict[str, Json]:
+    """The newest live position of every aircraft in a map feed, keyed by normalized registration.
 
     Feed rows are lists: [icao24, lat, lon, track, alt_ft, speed_kt, squawk, radar, type,
     reg, timestamp, from, to, flight, on_ground, vertical_speed, callsign, ...].
     """
-    best = None
+    newest: dict[str, list] = {}
     for row in (feed or {}).values():
-        if isinstance(row, list) and len(row) > 15 and norm_reg(str(row[9])) == norm_reg(reg):
-            if best is None or (row[10] or 0) > (best[10] or 0):
-                best = row
-    if best is None:
-        return None
-    return {"lat": best[1], "lon": best[2], "alt": best[4], "speed": best[5], "onGround": bool(best[14])}
+        if not (isinstance(row, list) and len(row) > 15 and row[9]):
+            continue
+        key = norm_reg(str(row[9]))
+        if key not in newest or (row[10] or 0) > (newest[key][10] or 0):
+            newest[key] = row
+    return {key: {"lat": row[1], "lon": row[2], "alt": row[4], "speed": row[5], "onGround": bool(row[14])}
+            for key, row in newest.items()}
+
+
+def parse_live(feed: Json | None, reg: str) -> Json | None:
+    """The newest live position for one registration from a map feed, or None if untracked."""
+    return parse_live_all(feed).get(norm_reg(reg))

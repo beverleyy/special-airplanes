@@ -4,12 +4,13 @@ from __future__ import annotations
 import re
 import threading
 import time
-from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from . import config
 from .errors import LiveryWatchError
-from .fr24 import FR24Client, board_details, parse_board_flight, parse_history_flight, parse_live
+from .boards import BoardJob, common_airline_names, use_common_names
+from .fr24 import FR24Client, parse_history_flight, parse_live, parse_live_all
 from .liveries import LiveryImporter, source_id
 from .store import Store
 from .util import clean_reg, dig, haversine_km, norm_reg
@@ -39,10 +40,10 @@ class LiveryWatch:
         self.importer = importer
         self.client = client or FR24Client()
         self._sleep = sleep
-        self._boards = TtlCache()
+        self._jobs: dict[str, BoardJob] = {}
+        self._jobs_lock = threading.Lock()
         self._live = TtlCache()
         self._tails = TtlCache()
-        self._airline_names: dict[str, str] = {}
 
     # Registry
 
@@ -65,71 +66,43 @@ class LiveryWatch:
     # Airport boards
 
     def board(self, code: str, fresh: bool = False) -> Json:
-        code = _airport_code(code)
-        cached = self._boards.get(code, config.MIN_REFRESH_SECONDS if fresh else config.BOARD_CACHE_SECONDS)
-        if cached:
-            return cached
-        now = int(time.time())
-        airport: Json = {"code": code, "name": "", "tz": "", "offset": 0, "lat": None, "lon": None}
-        arrivals, cut_a = self._read_board(code, "arrivals", now, airport)
-        self._sleep(config.PAGE_DELAY_SECONDS)
-        departures, cut_d = self._read_board(code, "departures", now, airport)
-        flights = sorted(arrivals + departures, key=lambda f: f["ts"])
-        self._airline_names.update(common_airline_names(flights))
-        use_common_names(flights, self._airline_names)
-        result = {
-            "airport": airport,
-            "fetchedAt": now,
-            "truncated": cut_a or cut_d,
-            "counts": {"arr": len(arrivals), "dep": len(departures), "withTail": sum(bool(f["reg"]) for f in flights)},
-            "flights": flights,
-        }
-        self._boards.put(code, result)
-        return result
+        """The board so far; check "complete" and ask again for the rest."""
+        job = self._board_job(code, fresh)
+        job.first_page_ready.wait(config.FIRST_PAGE_WAIT_SECONDS)
+        return job.result()
 
-    def _read_board(self, code: str, mode: str, now: int, airport: Json) -> tuple[list[Json], bool]:
-        start, horizon = now - config.LOOKBACK_SECONDS, now + config.LOOKAHEAD_SECONDS
-        flights: list[Json] = []
-        seen: set[tuple[str, int]] = set()
-        page, total, reached_horizon = 1, 1, False
-        while page <= min(total, config.MAX_BOARD_PAGES) and not reached_horizon:
-            if page > 1:
-                self._sleep(config.PAGE_DELAY_SECONDS)
-            plugin_data = dig(self.client.airport_board(code, mode, page, start),
-                              "result", "response", "airport", "pluginData") or {}
-            schedule = dig(plugin_data, "schedule", mode) or {}
-            if page == 1:
-                if not plugin_data.get("details") and not schedule:
-                    raise LiveryWatchError(f"Flightradar24 doesn't recognise {code}. Check the IATA code.")
-                details = board_details(plugin_data)
-                for key, value in details.items():
-                    airport[key] = airport[key] or value
-            total = dig(schedule, "page", "total") or 1
-            for item in schedule.get("data") or []:
-                flight = parse_board_flight(item, mode, airport["offset"])
-                if not flight or flight["ts"] < start:
-                    continue
-                if flight["ts"] > horizon:
-                    reached_horizon = True
-                    continue
-                key = (flight["number"], flight["ts"])
-                if key not in seen:
-                    seen.add(key)
-                    flights.append(flight)
-            page += 1
-        truncated = not reached_horizon and page <= total
-        return flights, truncated
+    def board_complete(self, code: str, fresh: bool = False) -> Json:
+        job = self._board_job(code, fresh)
+        job.finished.wait()
+        return job.result()
+
+    def _board_job(self, code: str, fresh: bool) -> BoardJob:
+        code = _airport_code(code)
+        max_age = config.MIN_REFRESH_SECONDS if fresh else config.BOARD_CACHE_SECONDS
+        with self._jobs_lock:
+            job = self._jobs.get(code)
+            stale = job is not None and job.done and (job.error or time.time() - job.started >= max_age)
+            if job is None or stale:
+                job = BoardJob(code, self.client, self._sleep).start()
+                self._jobs[code] = job
+        return job
 
     # Live positions
 
     def live_positions(self, code: str, regs: list[str]) -> dict[str, Json]:
-        board = self._boards.get(_airport_code(code), config.LOOKAHEAD_SECONDS)
-        airport = board["airport"] if board else {}
+        """Where these aircraft are now: one request for the area around the airport when its
+        position is known, otherwise one request per aircraft."""
+        job = self._jobs.get(_airport_code(code))
+        airport = job.result()["airport"] if job else {}
+        regs = regs[:config.MAX_LIVE_LOOKUPS]
+        if airport.get("lat") is not None:
+            nearby = self._live_area(airport)
+            found = {reg: nearby.get(norm_reg(reg)) for reg in regs}
+        else:
+            with ThreadPoolExecutor(max_workers=config.LIVE_LOOKUP_WORKERS) as pool:
+                found = dict(zip(regs, pool.map(self._live_position, regs)))
         positions: dict[str, Json] = {}
-        for i, reg in enumerate(regs[:config.MAX_LIVE_LOOKUPS]):
-            if i:
-                self._sleep(config.LIVE_DELAY_SECONDS)
-            position = self._live_position(reg)
+        for reg, position in found.items():
             if position is None:
                 continue
             if airport.get("lat") is not None and position["lat"] is not None:
@@ -137,6 +110,14 @@ class LiveryWatch:
                                                         position["lat"], position["lon"]), 1)
             positions[reg] = {k: position.get(k) for k in ("onGround", "speed", "alt", "distKm")}
         return positions
+
+    def _live_area(self, airport: Json) -> dict[str, Json]:
+        key = f"area:{airport['code']}"
+        cached = self._live.get(key, config.LIVE_CACHE_SECONDS)
+        if cached is None:
+            cached = parse_live_all(self.client.live_area(airport["lat"], airport["lon"], config.LIVE_AREA_KM))
+            self._live.put(key, cached)
+        return {k: dict(v) for k, v in cached.items()}
 
     def _live_position(self, reg: str) -> Json | None:
         key = norm_reg(reg)
@@ -148,6 +129,11 @@ class LiveryWatch:
         return dict(position) if position else None
 
     # Tails
+
+    def _known_airline_names(self) -> dict[str, str]:
+        flights = [f for job in list(self._jobs.values()) if job.done and not job.error
+                   for f in job.result()["flights"]]
+        return common_airline_names(flights)
 
     def tail(self, raw: str) -> Json:
         reg = clean_reg(raw) or re.sub(r"[^A-Z0-9-]", "", (raw or "").upper())
@@ -172,31 +158,9 @@ class LiveryWatch:
                    and (f["dep"]["ts"] or f["arr"]["ts"]) <= now + config.TAIL_HISTORY_AFTER_SECONDS]
         flights.sort(key=lambda f: f["dep"]["ts"] or f["arr"]["ts"])
         flights = flights[:config.MAX_TAIL_FLIGHTS]
-        use_common_names(flights, self._airline_names)
+        use_common_names(flights, self._known_airline_names())
         self._tails.put(key, flights)
         return flights
-
-
-NAME_FIELDS = (("airline", "airlineName"), ("operatorCode", "operator"))
-
-
-def common_airline_names(flights: list[Json]) -> dict[str, str]:
-    """Each airline's most common name. Special-livery aircraft often carry an extra note in
-    their airline name, but they're a minority, so the plain name wins."""
-    by_code: dict[str, Counter[str]] = {}
-    for flight in flights:
-        for code_field, name_field in NAME_FIELDS:
-            if flight.get(code_field) and flight.get(name_field):
-                by_code.setdefault(flight[code_field], Counter())[flight[name_field]] += 1
-    return {code: min(names.items(), key=lambda item: (-item[1], len(item[0])))[0]
-            for code, names in by_code.items()}
-
-
-def use_common_names(flights: list[Json], names: dict[str, str]) -> None:
-    for flight in flights:
-        for code_field, name_field in NAME_FIELDS:
-            if flight.get(code_field) in names:
-                flight[name_field] = names[flight[code_field]]
 
 
 def _airport_code(code: str) -> str:

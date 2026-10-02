@@ -30,7 +30,7 @@ def record(app: LiveryWatch, code: str, path: Path) -> dict:
         raise LiveryWatchError("The livery list is empty, so there's nothing to record.")
 
     log.info("Reading the %s arrivals and departures boards…", code.upper())
-    board = app.board(code, fresh=True)
+    board = app.board_complete(code, fresh=True)
     now = board["fetchedAt"]
     special = [f for f in board["flights"] if f["reg"] and norm_reg(f["reg"]) in registry]
     regs = sorted({f["reg"] for f in special})

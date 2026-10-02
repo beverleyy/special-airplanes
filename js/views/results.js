@@ -13,7 +13,8 @@ export function summaryHtml(board, shownCount) {
     <span class="sign sign--direction">${shownCount} special ${plural(shownCount, "livery", "liveries")}</span>
     <span>${counts.arr} arrivals and ${counts.dep} departures checked, ${counts.withTail} with a tail assigned.
       Times are ${escapeHtml(airport.name || airport.code)} local${zone}.</span>
-    ${board.truncated ? `<span class="summary__note">Flightradar24's board ended before 24 hours, so some later flights may be missing.</span>` : ""}`;
+    ${board.truncated ? `<span class="summary__note">Stopped reading after ${(counts.arr + counts.dep).toLocaleString()} flights
+      to limit requests to Flightradar24, so some flights late in the window may be missing.</span>` : ""}`;
 }
 
 export function emptyHtml(board, totalVisits) {
@@ -56,7 +57,7 @@ function placeHeading(visit) {
   return visit.arr ? "From" : "To";
 }
 
-function cardHtml(visit, live, today) {
+function cardHtml(visit, { live, today, selectedTail }) {
   const { entry, lead, arr, dep, reg } = visit;
   const when = parseLocal(lead.local);
   const status = situation(visit, live);
@@ -66,7 +67,12 @@ function cardHtml(visit, live, today) {
     ? `<div class="card__now"><span class="card__now-label">${status.live ? "Live" : "Now"}</span>${escapeHtml(status.text)}</div>`
     : "";
 
-  return `<article class="card">
+  const selected = visit.key === selectedTail;
+  const scheduleButton = selected
+    ? `<button class="card__schedule-link" type="button" data-action="show-schedule">Schedule below ↓</button>`
+    : "";
+
+  return `<article class="card${selected ? " card--selected" : ""}"${selected ? ` aria-current="true"` : ""}>
     <div class="card__when">
       <div>
         <div class="card__time">${when.time}</div>
@@ -77,7 +83,10 @@ function cardHtml(visit, live, today) {
       <span class="card__way">${way}</span>
     </div>
     <div class="card__body">
-      <h3 class="card__livery">${escapeHtml(entry.livery)}</h3>
+      <div class="card__title-row">
+        <h3 class="card__livery">${escapeHtml(visit.livery)}</h3>
+        ${scheduleButton}
+      </div>
       <div class="legs">
         <div class="label legs__head"></div><div class="label legs__head">Time</div>
         <div class="label legs__head">Flight</div><div class="label legs__head">${placeHeading(visit)}</div>
@@ -97,12 +106,12 @@ function cardHtml(visit, live, today) {
   </article>`;
 }
 
-const sectionHtml = (title, visits, live, today) => (visits.length
+const sectionHtml = (title, visits, options) => (visits.length
   ? `<h2 class="section-title"><span class="sign sign--location">${title}</span></h2>`
-    + visits.map(v => cardHtml(v, live, today)).join("")
+    + visits.map(v => cardHtml(v, options)).join("")
   : "");
 
-export function resultsHtml({ now, later }, board, live) {
-  const today = airportToday(board.airport, board.fetchedAt);
-  return sectionHtml("Now", now, live, today) + sectionHtml("Later", later, live, today);
+export function resultsHtml({ now, later }, board, { live, selectedTail = "" }) {
+  const options = { live, selectedTail, today: airportToday(board.airport, board.fetchedAt) };
+  return sectionHtml("Now", now, options) + sectionHtml("Later", later, options);
 }

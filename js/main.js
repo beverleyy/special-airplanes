@@ -10,9 +10,11 @@ import { emptyHtml, resultsHtml, summaryHtml } from "./views/results.js";
 import { tailHtml } from "./views/tail.js";
 
 const IMPORT_POLL_MS = 2000;
+const BOARD_POLL_MS = 1000;
 const AIRPORT_CODE = /^[A-Z0-9]{3}$/;
 
 const $ = id => document.getElementById(id);
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const el = {
   airportForm: $("airport-form"),
   airport: $("airport"),
@@ -42,6 +44,9 @@ const state = {
   database: null,
   board: null,
   live: new Map(),
+  selectedTail: "",
+  boardIsNew: false,
+  search: 0,
 };
 
 // URL
@@ -73,7 +78,7 @@ function renderCredit() {
 
 async function watchImport() {
   while (state.database?.state === "running") {
-    await new Promise(resolve => setTimeout(resolve, IMPORT_POLL_MS));
+    await wait(IMPORT_POLL_MS);
     try {
       const status = await state.source.importStatus();
       if (status.state === "running") continue;
@@ -96,8 +101,10 @@ function renderBoard() {
   el.directionFilter.innerHTML = directionFilterHtml(visits, prefs.direction);
   el.typeFilter.innerHTML = typeFilterHtml(visits, prefs);
   el.summary.innerHTML = summaryHtml(board, shown.length);
+  el.results.classList.toggle("results--entering", state.boardIsNew);
+  state.boardIsNew = false;
   el.results.innerHTML = shown.length
-    ? resultsHtml(splitNowAndLater(shown, live), board, live)
+    ? resultsHtml(splitNowAndLater(shown, live), board, { live, selectedTail: state.selectedTail })
     : emptyHtml(board, visits.length);
 }
 
@@ -106,21 +113,32 @@ function updatedText() {
   return `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
 }
 
-async function loadLive(code) {
+async function loadLive(code, search) {
   const regs = activeRegs(buildVisits(state.board.flights, state.registry));
   if (!regs.length) return;
-  el.status.innerHTML = progress(regs.length === 1
-    ? "Checking where that aircraft is right now…"
-    : `Checking where ${regs.length} aircraft are right now…`);
   try {
     const positions = await state.source.live(code, regs);
+    if (search !== state.search) return;
     state.live = new Map(Object.entries(positions).map(([reg, position]) => [normReg(reg), position]));
     renderBoard();
   } catch {
     // Live positions are a bonus; the board is still useful without them.
-  } finally {
-    el.status.innerHTML = "";
   }
+}
+
+/** Show the first pages straight away, then keep asking until the whole board is in. */
+async function loadRestOfBoard(code, search) {
+  while (!state.board.complete) {
+    const { arr, dep } = state.board.counts;
+    el.status.innerHTML = progress(`Loading later flights… ${arr + dep} checked so far.`);
+    await wait(BOARD_POLL_MS);
+    if (search !== state.search) return;
+    const board = await state.source.board(code);
+    if (search !== state.search) return;
+    state.board = board;
+    renderBoard();
+  }
+  el.status.innerHTML = "";
 }
 
 async function searchAirport({ fresh = false } = {}) {
@@ -130,23 +148,29 @@ async function searchAirport({ fresh = false } = {}) {
     el.airport.focus();
     return;
   }
+  const search = ++state.search;
   el.airportSubmit.disabled = true;
   el.refresh.disabled = true;
   el.status.innerHTML = progress(`Reading the ${code} arrivals and departures boards…`);
   try {
-    state.board = await state.source.board(code, { fresh });
+    const board = await state.source.board(code, { fresh });
+    if (search !== state.search) return;
+    state.board = board;
     state.live = new Map();
+    state.boardIsNew = true;
     el.status.innerHTML = "";
     el.updated.textContent = updatedText();
     el.refresh.hidden = false;
     renderBoard();
     setParam("airport", code);
-    await loadLive(code);
+    await Promise.all([loadRestOfBoard(code, search), loadLive(code, search)]);
   } catch (error) {
-    el.status.innerHTML = holdSign(error.message);
+    if (search === state.search) el.status.innerHTML = holdSign(error.message);
   } finally {
-    el.airportSubmit.disabled = false;
-    el.refresh.disabled = false;
+    if (search === state.search) {
+      el.airportSubmit.disabled = false;
+      el.refresh.disabled = false;
+    }
   }
 }
 
@@ -181,17 +205,25 @@ async function lookupTail(raw) {
       isDemo: state.source.isDemo,
     });
     setParam("tail", reg);
+    selectTail(result.special ? result.entry.reg : "");
   } catch (error) {
     el.tailResult.innerHTML = holdSign(error.message);
+    selectTail("");
   } finally {
     showAircraftSearch();
     el.tailSubmit.disabled = false;
   }
 }
 
+function selectTail(reg) {
+  state.selectedTail = normReg(reg);
+  renderBoard();
+}
+
 function closeTail() {
   el.tailResult.innerHTML = "";
   setParam("tail", null);
+  selectTail("");
 }
 
 // Events
@@ -223,6 +255,10 @@ function bindEvents() {
     if (event.target.closest("[data-action='close-tail']")) closeTail();
   });
   el.results.addEventListener("click", event => {
+    if (event.target.closest("[data-action='show-schedule']")) {
+      showAircraftSearch();
+      return;
+    }
     const button = event.target.closest("[data-tail]");
     if (button) lookupTail(button.dataset.tail);
   });

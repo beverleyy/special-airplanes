@@ -518,6 +518,39 @@ a:not(.btn):hover {
   padding: 14px 18px;
 }
 
+.card--selected {
+  box-shadow: 0 0 0 5px var(--taxi-yellow);
+}
+
+.card__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.card__schedule-link {
+  padding: 4px 9px 2px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--taxi-yellow);
+  color: var(--sign-black);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.card__schedule-link:hover {
+  background: var(--taxi-yellow-bright);
+}
+
+.card__schedule-link:focus-visible {
+  outline: 3px solid var(--sign-black);
+  outline-offset: 2px;
+}
+
 .card__livery {
   margin: 0;
   font-size: 1.6rem;
@@ -716,7 +749,7 @@ a:not(.btn):hover {
 /* Motion */
 
 @media (prefers-reduced-motion: no-preference) {
-  .card {
+  .results--entering .card {
     animation: card-in 0.35s ease-out both;
   }
 

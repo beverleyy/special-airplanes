@@ -92,7 +92,7 @@ export function tailHtml(result, { airportCode, isDemo }) {
     externalLink(photosUrl(entry.reg), "Photos"),
   ].join(", ");
   return `<section class="tail-card">
-    ${headHtml(entry.reg, entry.livery)}
+    ${headHtml(entry.reg, flights.find(f => f.liveryNote)?.liveryNote || entry.livery)}
     <div class="tail-card__body">
       <div class="facts">
         ${fact("Airline", escapeHtml(airline || "–"))}

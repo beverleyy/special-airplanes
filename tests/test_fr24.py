@@ -1,6 +1,7 @@
 import unittest
 
-from livery_watch.fr24 import clean_airline, parse_board_flight, parse_history_flight, parse_live
+from livery_watch.fr24 import (clean_airline, parse_board_flight, parse_history_flight, parse_live,
+                               parse_live_all, split_airline)
 
 
 def board_item(**times):
@@ -60,6 +61,33 @@ class LiveAndAirlineTest(unittest.TestCase):
         live = parse_live({"full_count": 3, "x": old, "y": new, "z": other}, "JA-894A")
         self.assertEqual(live, {"lat": 3, "lon": 4, "alt": 5000, "speed": 170, "onGround": False})
         self.assertIsNone(parse_live({}, "JA894A"))
+
+    def test_split_airline_keeps_the_livery_name(self):
+        cases = {
+            "Alaska Airlines (Seattle Kraken Livery)": ("Alaska Airlines", "Seattle Kraken"),
+            "Finnair (Bringing Us Together Since 1923 Sticker)": ("Finnair", "Bringing Us Together Since 1923 Sticker"),
+            "Singapore Airlines (Star Alliance)": ("Singapore Airlines", "Star Alliance"),
+            'AirAsia ("Just coastin\' in Malaysia" special colours / Visit Truly Asia Malaysia 2026':
+                ("AirAsia", "Just coastin' in Malaysia / Visit Truly Asia Malaysia 2026"),
+            "ANA (Special Livery)": ("ANA", ""),
+            "Delta Connection (SkyWest)": ("Delta Connection (SkyWest)", ""),
+            "United Airlines": ("United Airlines", ""),
+        }
+        for name, expected in cases.items():
+            self.assertEqual(split_airline(name), expected, name)
+
+    def test_board_flight_carries_the_note(self):
+        flight = parse_board_flight(board_item(scheduled={"arrival": 3600}), "arrivals", 0)
+        self.assertEqual(flight["liveryNote"], "Pikachu Jet NH")
+
+    def test_parse_live_all_reads_every_aircraft_in_an_area(self):
+        feed = {"full_count": 2, "version": 4,
+                "a": ["a", 1, 2, 0, 0, 0, "", "", "B789", "JA894A", 100, "", "", "", 1, 0],
+                "b": ["b", 3, 4, 0, 900, 140, "", "", "B39M", "N933AK", 100, "", "", "", 0, -600],
+                "c": ["c", 5, 6, 0, 0, 0, "", "", "GRND", "", 100, "", "", "", 1, 0]}
+        positions = parse_live_all(feed)
+        self.assertEqual(set(positions), {"JA894A", "N933AK"})
+        self.assertFalse(positions["N933AK"]["onGround"])
 
     def test_clean_airline(self):
         self.assertEqual(clean_airline("Alaska Airlines (Seattle Kraken Livery)"), "Alaska Airlines")

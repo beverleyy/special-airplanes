@@ -4,14 +4,14 @@ Why does this thing exist? I spent too much of my summer watching live SFO plane
 
 In other words, what interesting paint jobs will be at a specific airport in the next 24 hours? What are these interesting airplanes doing right now?
 
-![Livery Watch showing special liveries at SFO](screenshot.png)
+![Livery Watch showing special liveries](screenshot.png)
 
 ## What it does
 
 - Grab the arrival/departure data for a specified airport from FR24 and pick out special-liveried tail numbers, including retro jets, heritage jets, black LH queens, pokemon planes...
 - Look up a special-liveried airplane by tail number and get its recent/upcoming flights at all airports
 
-**[Try the demo](https://beverleyy.github.io/special-airplanes/)** featuring a recorded moment at SFO on 30 Sep 2026.
+**[Try the demo](https://beverleyy.github.io/special-airplanes/)** featuring a recorded moment at SIN on 03 Oct 2026.
 
 ## Run it with live data
 
@@ -44,7 +44,7 @@ This thingy has no dependencies other than a fairly modern Python installation (
 
 **Flight schedules, tail assignments, and live positions:** I use [Flightradar24](https://flightradar24.com) to track airplanes. However, I am poor and I don't have access to the API. The reader can draw their own conclusions as to what this means. In other unrelated news, FR24's terms don't permit automations, which is also why I don't have a live demo available. If run locally the app caches the results once when querying the airport and only requests new data for that airport when the user wants it or when the data has become too stale.
 
-**Demo data:** Due to the two abovementioned constraints, in order to put this thingy on my portfolio and hopefully make myself more attractive to the airlines, I had to build a small demo dataset just to show that the thingy works. The `demo-data.json` file only saves, for SIN specifically, the special-liveried flights on 30 Sep 2026 and the live positions for the specific airplanes running those flights at like 4.30am SGT that day. The beauty of using Github is that Pages only serves static files, so I check first for a live instance of the app and if there isn't one then it switches to the demo mode and just uses my small sample dataset.
+**Demo data:** Due to the two abovementioned constraints, in order to put this thingy on my portfolio and hopefully make myself more attractive to the airlines, I had to build a small demo dataset just to show that the thingy works. The `demo-data.json` file only saves, for SIN specifically, the special-liveried flights on 03 Oct 2026 and the live positions for the specific airplanes running those flights at like 5.55am SGT that day. The beauty of using Github is that Pages only serves static files, so I check first for a live instance of the app and if there isn't one then it switches to the demo mode and just uses my small sample dataset.
 
 ## To-do list
 

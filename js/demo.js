@@ -57,7 +57,7 @@ export async function demoSource() {
 
     async board(airport) {
       if (airport !== code) throw new Error(`The demo only has data for ${code}. Run Livery Watch yourself for any airport.`);
-      return { ...recording.board, fetchedAt: nowSeconds() };
+      return { ...recording.board, fetchedAt: nowSeconds(), complete: true };
     },
     live: async () => recording.live,
 

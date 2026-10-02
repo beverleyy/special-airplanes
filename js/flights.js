@@ -79,6 +79,7 @@ export function buildVisits(flights, registry) {
       model,
       reg: (arr || dep).reg,
       family: family(model || entry.type),
+      livery: arr?.liveryNote || dep?.liveryNote || entry.livery,
       airlineName: entry.airline || arr?.airlineName || dep?.airlineName || (arr || dep).airline || "",
       operatedBy: operatorNote(entry.airline || (arr || dep).airlineName, dep || arr),
     };

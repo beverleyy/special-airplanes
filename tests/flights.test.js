@@ -39,6 +39,13 @@ test("the livery database's airline name wins over Flightradar24's", () => {
   assert.equal(fallback.airlineName, "All Nippon Airways");
 });
 
+test("Flightradar24's livery note wins over the database name", () => {
+  const [noted] = buildVisits([flight("arr", 10, { liveryNote: "Pikachu Jet NH1" })], registry);
+  assert.equal(noted.livery, "Pikachu Jet NH1");
+  const [plain] = buildVisits([flight("arr", 10)], registry);
+  assert.equal(plain.livery, "Pikachu Jet NH");
+});
+
 test("operatorNote shows the operator only when another airline flies the aircraft", () => {
   const regional = { airline: "AA", operator: "SkyWest Airlines", operatorCode: "OO" };
   assert.equal(operatorNote("American Airlines", regional), "SkyWest Airlines");
