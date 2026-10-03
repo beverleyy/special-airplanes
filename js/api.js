@@ -14,6 +14,7 @@ const query = params => new URLSearchParams(params).toString();
 
 /** Data from a running Livery Watch server. */
 export const serverSource = {
+  kind: "scheduled",
   isDemo: false,
   summary: () => request("api/data"),
   importStatus: () => request("api/import-status"),

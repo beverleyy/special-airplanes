@@ -47,5 +47,44 @@ class MergeImportTest(unittest.TestCase):
         self.assertEqual(data["imports"][source]["count"], 1)
 
 
+class HexCodeTest(unittest.TestCase):
+    def test_parse_hex_codes(self):
+        from livery_watch.aircraft_db import parse_hex_codes
+        lines = ["000001;;;10;;;Miscode;", "86EF06;JA894A;B789;00;", "ACF0D8;N933AK;B39M;00;", "3C4B34;D-ABYT;B748;00;"]
+        self.assertEqual(parse_hex_codes(lines, {"JA894A", "DABYT"}), {"JA894A": "86ef06", "DABYT": "3c4b34"})
+
+
+class ExportTest(unittest.TestCase):
+    def test_exports_entries_and_refuses_an_empty_list(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from livery_watch import liveries
+        from livery_watch.errors import LiveryWatchError
+        from livery_watch.export import export_registry
+        from livery_watch.liveries import LiveryImporter
+        from livery_watch.store import Store
+
+        folder = Path(tempfile.mkdtemp())
+        store = Store(folder / "data.json")
+        importer = LiveryImporter(store, ["https://airportwebcams.net/special-liveries/"])
+        entries = [{"reg": "JA894A", "airline": "ANA", "type": "787-9", "livery": "Pikachu Jet NH"}]
+        with mock.patch.object(liveries, "fetch_page", return_value=(entries, "15 September 2026")), \
+             mock.patch("livery_watch.export.hex_codes", return_value={"JA894A": "86ef06"}):
+            self.assertEqual(export_registry(store, importer, folder / "out.json"), 1)
+        payload = json.loads((folder / "out.json").read_text())
+        self.assertEqual(payload["updated"], "15 September 2026")
+        self.assertEqual(payload["entries"], [{**entries[0], "hex": "86ef06"}])
+
+        empty = Store(folder / "empty.json")
+        failing = LiveryImporter(empty, ["https://airportwebcams.net/special-liveries/"])
+        with mock.patch.object(liveries, "fetch_page", side_effect=LiveryWatchError("unreachable")):
+            with self.assertRaises(LiveryWatchError):
+                export_registry(empty, failing, folder / "nothing.json")
+        self.assertFalse((folder / "nothing.json").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

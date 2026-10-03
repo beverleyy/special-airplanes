@@ -1,0 +1,19 @@
+name = "livery-watch"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# the real id value is a github repo secret
+# deploy worker action fills in at runtime
+[[kv_namespaces]]
+binding = "LIVERIES"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+# localhost always allowed for testing
+ALLOWED_ORIGINS = "https://beverleyy.github.io"
+PROVIDERS = "adsbfi|https://opendata.adsb.fi/api"
+PROXY_ORIGIN = "https://beverleyy.github.io"
+
+# Secrets:
+# ACCESS_CODE[S]
+# PROXY

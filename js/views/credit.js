@@ -21,6 +21,14 @@ export function demoCreditHtml(recording) {
     + "Run Livery Watch yourself for live flights at any airport.";
 }
 
+export function liveCreditHtml(database) {
+  const details = database?.count
+    ? ` (${database.count.toLocaleString()} aircraft${database.updated ? `, last updated ${escapeHtml(database.updated)}` : ""})`
+    : "";
+  return `Live positions from ${externalLink("https://adsb.fi", "adsb.fi")}, routes from
+    ${externalLink("https://www.adsbdb.com", "adsbdb")}, and livery data from the ${databaseLink()}${details}.`;
+}
+
 export function creditHtml(database, registrySize) {
   const details = database.count
     ? `, ${database.count.toLocaleString()} aircraft${database.updated ? `, last updated ${escapeHtml(database.updated)}` : ""}`

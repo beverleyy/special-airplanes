@@ -1,13 +1,17 @@
 import { serverSource } from "./api.js";
 import { airportTime } from "./clock.js";
+import { WORKER_URL } from "./config.js";
 import { demoSource } from "./demo.js";
 import { activeRegs, buildVisits, isGone, selectVisits, splitNowAndLater } from "./flights.js";
-import { normReg } from "./format.js";
-import { holdSign, progress } from "./views/common.js";
-import { creditHtml, demoCreditHtml } from "./views/credit.js";
+import { escapeHtml, normReg } from "./format.js";
+import { filterLive, mergeLive, splitLive } from "./live.js";
+import { accessFormHtml, holdSign, progress } from "./views/common.js";
+import { creditHtml, demoCreditHtml, liveCreditHtml } from "./views/credit.js";
 import { directionFilterHtml, typeFilterHtml } from "./views/filters.js";
+import { liveEmptyHtml, liveResultsHtml, liveSummaryHtml } from "./views/live.js";
 import { emptyHtml, resultsHtml, summaryHtml } from "./views/results.js";
 import { tailHtml } from "./views/tail.js";
+import { AccessCodeError, forgetAccessCode, saveAccessCode, workerSource } from "./worker-api.js";
 
 const IMPORT_POLL_MS = 2000;
 const BOARD_POLL_MS = 1000;
@@ -33,6 +37,7 @@ const el = {
   directionFilter: $("direction-filter"),
   typeFilter: $("type-filter"),
   status: $("status"),
+  searchTitle: $("search-title"),
   summary: $("summary"),
   results: $("results"),
 };
@@ -44,6 +49,10 @@ const state = {
   database: null,
   board: null,
   live: new Map(),
+  nearby: null,
+  inbound: null,
+  inboundState: "",
+  notice: "",
   selectedTail: "",
   boardIsNew: false,
   search: 0,
@@ -71,9 +80,10 @@ function applySummary(summary) {
 }
 
 function renderCredit() {
-  el.credit.innerHTML = state.source.isDemo
-    ? demoCreditHtml(state.source.recording)
-    : creditHtml(state.database, state.registry.size);
+  if (state.source.kind === "live") el.credit.innerHTML = liveCreditHtml(state.database);
+  else if (state.source.isDemo) el.credit.innerHTML = demoCreditHtml(state.source.recording);
+  else el.credit.innerHTML = creditHtml(state.database, state.registry.size);
+  if (state.notice) el.credit.insertAdjacentHTML("beforeend", `<span class="credit__warn">${escapeHtml(state.notice)}</span>`);
 }
 
 async function watchImport() {
@@ -92,6 +102,10 @@ async function watchImport() {
 // Airport board
 
 function renderBoard() {
+  if (state.source?.kind === "live") {
+    renderLiveBoard();
+    return;
+  }
   const { board, live, prefs, registry } = state;
   if (!board) return;
   const visits = buildVisits(board.flights, registry).filter(v => !isGone(v, live));
@@ -106,6 +120,23 @@ function renderBoard() {
   el.results.innerHTML = shown.length
     ? resultsHtml(splitNowAndLater(shown, live), board, { live, selectedTail: state.selectedTail })
     : emptyHtml(board, visits.length);
+}
+
+function renderLiveBoard() {
+  const { nearby, inbound, prefs } = state;
+  if (!nearby) return;
+  const items = mergeLive(nearby, inbound);
+  const shown = filterLive(items, prefs);
+
+  el.filters.hidden = false;
+  el.directionFilter.innerHTML = directionFilterHtml(items, prefs.direction);
+  el.typeFilter.innerHTML = typeFilterHtml(items, prefs);
+  el.summary.innerHTML = liveSummaryHtml(nearby, inbound, shown.length, state.inboundState);
+  el.results.classList.toggle("results--entering", state.boardIsNew);
+  state.boardIsNew = false;
+  el.results.innerHTML = shown.length
+    ? liveResultsHtml(splitLive(shown), nearby.airport, { selectedTail: state.selectedTail })
+    : liveEmptyHtml(nearby, items.length);
 }
 
 function updatedText() {
@@ -141,6 +172,43 @@ async function loadRestOfBoard(code, search) {
   el.status.innerHTML = "";
 }
 
+function showBoard(code) {
+  state.boardIsNew = true;
+  el.status.innerHTML = "";
+  el.updated.textContent = updatedText();
+  el.refresh.hidden = false;
+  renderBoard();
+  setParam("airport", code);
+}
+
+async function loadScheduledBoard(code, search, fresh) {
+  el.status.innerHTML = progress(`Reading the ${code} arrivals and departures boards…`);
+  const board = await state.source.board(code, { fresh });
+  if (search !== state.search) return;
+  state.board = board;
+  state.live = new Map();
+  showBoard(code);
+  await Promise.all([loadRestOfBoard(code, search), loadLive(code, search)]);
+}
+
+/** Nearby aircraft first, then special liveries in the air anywhere that are flying here. */
+async function loadLiveBoard(code, search) {
+  el.status.innerHTML = progress(`Checking for special liveries around ${code}…`);
+  const nearby = await state.source.nearby(code);
+  if (search !== state.search) return;
+  Object.assign(state, { nearby, inbound: null, inboundState: "loading" });
+  showBoard(code);
+  try {
+    const inbound = await state.source.inbound(code);
+    if (search !== state.search) return;
+    Object.assign(state, { inbound, inboundState: "done" });
+  } catch (error) {
+    if (search !== state.search) return;
+    state.inboundState = error.message;
+  }
+  renderBoard();
+}
+
 async function searchAirport({ fresh = false } = {}) {
   const code = el.airport.value.trim().toUpperCase();
   if (!AIRPORT_CODE.test(code)) {
@@ -151,19 +219,9 @@ async function searchAirport({ fresh = false } = {}) {
   const search = ++state.search;
   el.airportSubmit.disabled = true;
   el.refresh.disabled = true;
-  el.status.innerHTML = progress(`Reading the ${code} arrivals and departures boards…`);
   try {
-    const board = await state.source.board(code, { fresh });
-    if (search !== state.search) return;
-    state.board = board;
-    state.live = new Map();
-    state.boardIsNew = true;
-    el.status.innerHTML = "";
-    el.updated.textContent = updatedText();
-    el.refresh.hidden = false;
-    renderBoard();
-    setParam("airport", code);
-    await Promise.all([loadRestOfBoard(code, search), loadLive(code, search)]);
+    if (state.source.kind === "live") await loadLiveBoard(code, search);
+    else await loadScheduledBoard(code, search, fresh);
   } catch (error) {
     if (search === state.search) el.status.innerHTML = holdSign(error.message);
   } finally {
@@ -271,21 +329,59 @@ function bindEvents() {
 
 // Start
 
+/** The local server if one is running, else your Worker if configured, else the demo. */
 async function connect() {
   try {
-    const summary = await serverSource.summary();
-    return { source: serverSource, summary };
+    return { source: serverSource, summary: await serverSource.summary() };
   } catch {
-    const source = await demoSource();
-    return { source, summary: await source.summary() };
+    // No local server: this is the static site.
   }
+  let notice = "";
+  if (WORKER_URL && getParam("demo") === null) {
+    const source = workerSource(WORKER_URL);
+    try {
+      return { source, summary: await source.summary() };
+    } catch (error) {
+      if (error instanceof AccessCodeError) return { source, needsCode: error.message };
+      notice = `The live version isn't reachable right now (${error.message}), so this is the demo.`;
+    }
+  }
+  const source = await demoSource();
+  return { source, summary: await source.summary(), notice };
+}
+
+function askForAccessCode(message) {
+  el.status.innerHTML = accessFormHtml(message);
+  const form = document.getElementById("access-form");
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    saveAccessCode(document.getElementById("access-code").value);
+    location.reload();
+  });
+  document.getElementById("access-code").focus();
+}
+
+/** Access links carry the code as ?code=…; save it and take it out of the address bar. */
+function takeCodeFromLink() {
+  const code = getParam("code");
+  if (!code) return;
+  saveAccessCode(code);
+  setParam("code", null);
 }
 
 async function start() {
+  takeCodeFromLink();
   bindEvents();
-  const { source, summary } = await connect();
+  const { source, summary, needsCode, notice } = await connect();
   state.source = source;
-  el.localNote.hidden = source.isDemo;
+  state.notice = notice || "";
+  if (source.kind === "live") el.searchTitle.textContent = "Special liveries around right now";
+  el.localNote.hidden = source.kind !== "scheduled" || source.isDemo;
+  if (needsCode) {
+    forgetAccessCode();
+    askForAccessCode(needsCode);
+    return;
+  }
   applySummary(summary);
   watchImport();
 

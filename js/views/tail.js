@@ -1,7 +1,10 @@
+import { nowSeconds } from "../clock.js";
 import { operatorNote } from "../flights.js";
-import { escapeHtml, parseLocal } from "../format.js";
+import { escapeHtml, formatDuration, parseLocal } from "../format.js";
 import { externalLink, flightAwareUrl, fr24AircraftUrl, photosUrl } from "../links.js";
 import { fact } from "./common.js";
+import { localTime } from "./live.js";
+import { routeHtml } from "./route.js";
 
 const SCHEDULE_CHANGE_SECONDS = 300;
 const KIND_LABELS = { actual: "Actual", estimated: "Expected", scheduled: "Scheduled" };
@@ -80,8 +83,50 @@ function scheduleHtml(result, airportCode, isDemo) {
     </table>${note}`;
 }
 
+function liveNowHtml(entry, live) {
+  if (!live) {
+    return `<p class="tail-card__message">${escapeHtml(entry.reg)} isn't being tracked right now. It may be parked with
+      its transponder off, or outside receiver coverage.</p>`;
+  }
+  let arrival = "";
+  if (live.etaTs && live.destZone) {
+    const at = localTime(live.etaTs, live.destZone.offset);
+    const minutes = Math.max(0, Math.round((live.etaTs - nowSeconds()) / 60));
+    arrival = fact("Lands", `about ${at.time} ${escapeHtml(live.destZone.tz)}${minutes ? ` (in ${formatDuration(minutes)})` : ""}`);
+  }
+  return `${routeHtml(live)}
+    <div class="facts">
+      ${fact("Right now", live.onGround ? "On the ground" : "In the air")}
+      ${arrival}
+      ${live.distToDestKm != null && !live.onGround ? fact("To go", `${live.distToDestKm.toLocaleString()} km`) : ""}
+    </div>`;
+}
+
+function liveTailHtml(result) {
+  const { entry, live } = result;
+  const links = [
+    externalLink(fr24AircraftUrl(entry.reg), "FR24"),
+    externalLink(flightAwareUrl(entry.reg), "FlightAware"),
+    externalLink(photosUrl(entry.reg), "Photos"),
+  ].join(", ");
+  return `<section class="tail-card">
+    ${headHtml(entry.reg, entry.livery)}
+    <div class="tail-card__body">
+      <div class="facts">
+        ${fact("Airline", escapeHtml(entry.airline || live?.airline || "–"))}
+        ${fact("Aircraft", escapeHtml(live?.model || entry.type || "–"))}
+        ${fact("More", links)}
+      </div>
+      ${liveNowHtml(entry, live)}
+      <p class="tail-card__message summary__note">The live site shows where this aircraft is right now. For its upcoming
+        flights, run Livery Watch in a terminal.</p>
+    </div>
+  </section>`;
+}
+
 export function tailHtml(result, { airportCode, isDemo }) {
   if (!result.special) return notSpecialHtml(result.reg, isDemo);
+  if ("live" in result) return liveTailHtml(result);
   const { entry, flights } = result;
   const model = flights.find(f => f.model)?.model || entry.type;
   const airline = entry.airline || flights.find(f => f.airlineName)?.airlineName;

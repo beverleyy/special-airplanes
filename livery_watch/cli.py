@@ -12,6 +12,7 @@ from .errors import LiveryWatchError
 from .liveries import LiveryImporter
 from .server import LiveryWatchServer
 from .service import LiveryWatch
+from .export import export_registry
 from .snapshot import record
 from .store import Store
 
@@ -29,6 +30,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="extra page with a livery table (repeatable)")
     parser.add_argument("--snapshot", metavar="IATA", help="record demo-data.json for this airport, then exit")
     parser.add_argument("--out", type=Path, default=config.DEMO_FILE, help="where --snapshot writes")
+    parser.add_argument("--export-registry", type=Path, metavar="PATH",
+                        help="refresh the livery list and write it as JSON for the Cloudflare Worker, then exit")
     parser.add_argument("--verbose", action="store_true", help="log every request")
     return parser.parse_args(argv)
 
@@ -40,6 +43,14 @@ def main(argv: list[str] | None = None) -> int:
     store = Store(config.DATA_FILE)
     importer = LiveryImporter(store, [config.LIVERY_SOURCE, *args.source])
     app = LiveryWatch(store, importer)
+
+    if args.export_registry:
+        try:
+            export_registry(store, importer, args.export_registry)
+        except LiveryWatchError as e:
+            log.error(str(e))
+            return 1
+        return 0
 
     if args.snapshot:
         try:

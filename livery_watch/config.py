@@ -9,6 +9,7 @@ DEMO_FILE = PROJECT_DIR / "demo-data.json"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8024
 LIVERY_SOURCE = "https://airportwebcams.net/special-liveries/"
+AIRCRAFT_DB_URL = "https://raw.githubusercontent.com/wiedehopf/tar1090-db/csv/aircraft.csv.gz"
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "

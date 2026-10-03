@@ -1,0 +1,37 @@
+name: Update livery list
+
+# Refreshes the special livery list from AirportWebcams.net and uploads it straight into the
+# Worker's private KV storage. The list is never committed or published.
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Export the livery list
+        run: python -m livery_watch --export-registry "$RUNNER_TEMP/registry.json"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Upload to the Worker's storage
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
+        run: npx --yes wrangler@4 kv key put registry --path "$RUNNER_TEMP/registry.json" --namespace-id "$KV_NAMESPACE_ID" --remote

@@ -47,6 +47,7 @@ export async function demoSource() {
     Object.entries(recording.tails || {}).find(([r]) => normReg(r) === normReg(reg))?.[1];
 
   return {
+    kind: "scheduled",
     isDemo: true,
     recording: recorded ? { airport: recording.board.airport, recordedAt: recording.recordedAt } : null,
     airportCode: code,
