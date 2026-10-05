@@ -13,6 +13,7 @@ export function summaryHtml(board, shownCount) {
     <span class="sign sign--direction">${shownCount} special ${plural(shownCount, "livery", "liveries")}</span>
     <span>${counts.arr} arrivals and ${counts.dep} departures checked, ${counts.withTail} with a tail assigned.
       Times are ${escapeHtml(airport.name || airport.code)} local${zone}.</span>
+    ${board.note ? `<span class="summary__note">${escapeHtml(board.note)}</span>` : ""}
     ${board.truncated ? `<span class="summary__note">Stopped reading after ${(counts.arr + counts.dep).toLocaleString()} flights
       to limit requests to Flightradar24, so some flights late in the window may be missing.</span>` : ""}`;
 }

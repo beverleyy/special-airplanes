@@ -1,21 +1,26 @@
 """App logic behind the HTTP API: airport boards, live positions, and tail lookups."""
 from __future__ import annotations
 
+import json
+import logging
 import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Callable
 
 from . import config
 from .errors import LiveryWatchError
-from .boards import BoardJob, common_airline_names, use_common_names
-from .fr24 import FR24Client, parse_history_flight, parse_live, parse_live_all
+from .boards import BoardJob, StoredBoard, common_airline_names, use_common_names
+from .fr24 import (FR24Client, check_history_response, feed_looks_valid, parse_history_flight, parse_live,
+                   parse_live_all)
 from .liveries import LiveryImporter, source_id
 from .store import Store
 from .util import clean_reg, dig, haversine_km, norm_reg
 
 Json = dict[str, Any]
+log = logging.getLogger(__name__)
 
 
 class TtlCache:
@@ -35,12 +40,13 @@ class TtlCache:
 
 class LiveryWatch:
     def __init__(self, store: Store, importer: LiveryImporter, client: FR24Client | None = None,
-                 sleep: Callable[[float], None] = time.sleep) -> None:
+                 sleep: Callable[[float], None] = time.sleep, cache_dir: Path | None = config.CACHE_DIR) -> None:
         self.store = store
         self.importer = importer
         self.client = client or FR24Client()
         self._sleep = sleep
-        self._jobs: dict[str, BoardJob] = {}
+        self._cache_dir = cache_dir
+        self._jobs: dict[str, BoardJob | StoredBoard] = {}
         self._jobs_lock = threading.Lock()
         self._live = TtlCache()
         self._tails = TtlCache()
@@ -76,16 +82,50 @@ class LiveryWatch:
         job.finished.wait()
         return job.result()
 
-    def _board_job(self, code: str, fresh: bool) -> BoardJob:
+    def _board_job(self, code: str, fresh: bool) -> BoardJob | StoredBoard:
+        """Reuse a recent board; a refresh re-reads only the next few hours of a board under 15 minutes old."""
         code = _airport_code(code)
-        max_age = config.MIN_REFRESH_SECONDS if fresh else config.BOARD_CACHE_SECONDS
         with self._jobs_lock:
-            job = self._jobs.get(code)
-            stale = job is not None and job.done and (job.error or time.time() - job.started >= max_age)
-            if job is None or stale:
-                job = BoardJob(code, self.client, self._sleep).start()
+            job = self._jobs.get(code) or self._load_board(code)
+            if job is not None and not job.done:
+                return job
+            age = time.time() - job.started if job else None
+            usable = job is not None and not job.error and age < config.BOARD_CACHE_SECONDS
+            if usable and (not fresh or age < config.MIN_REFRESH_SECONDS):
                 self._jobs[code] = job
+                return job
+            previous = job.result() if usable else None
+            job = BoardJob(code, self.client, self._sleep, previous=previous, on_complete=self._save_board).start()
+            self._jobs[code] = job
         return job
+
+    # Board cache on disk
+
+    def _board_path(self, code: str) -> Path | None:
+        return self._cache_dir / f"board-{code}.json" if self._cache_dir else None
+
+    def _save_board(self, board: Json) -> None:
+        path = self._board_path(board["airport"]["code"])
+        if not path:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(board, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(path)
+        except OSError as e:
+            log.warning("Couldn't save the %s board to disk: %s", board["airport"]["code"], e)
+
+    def _load_board(self, code: str) -> StoredBoard | None:
+        path = self._board_path(code)
+        if not path or not path.exists():
+            return None
+        try:
+            board = json.loads(path.read_text(encoding="utf-8"))
+            stored = StoredBoard(board)
+        except (OSError, ValueError, KeyError):
+            return None
+        return stored if time.time() - stored.started < config.BOARD_CACHE_SECONDS else None
 
     # Live positions
 
@@ -115,7 +155,11 @@ class LiveryWatch:
         key = f"area:{airport['code']}"
         cached = self._live.get(key, config.LIVE_CACHE_SECONDS)
         if cached is None:
-            cached = parse_live_all(self.client.live_area(airport["lat"], airport["lon"], config.LIVE_AREA_KM))
+            feed = self.client.live_area(airport["lat"], airport["lon"], config.LIVE_AREA_KM)
+            if feed is not None and not feed_looks_valid(feed):
+                log.warning("Flightradar24's live feed format looks different; skipping live positions.")
+                feed = None
+            cached = parse_live_all(feed)
             self._live.put(key, cached)
         return {k: dict(v) for k, v in cached.items()}
 
@@ -151,7 +195,7 @@ class LiveryWatch:
         if cached is not None:
             return cached
         now = int(time.time())
-        rows = dig(self.client.aircraft_history(reg), "result", "response", "data") or []
+        rows = check_history_response(self.client.aircraft_history(reg))
         flights = [f for f in map(parse_history_flight, rows) if f]
         flights = [f for f in flights
                    if (f["arr"]["ts"] or f["dep"]["ts"]) >= now - config.TAIL_HISTORY_BEFORE_SECONDS

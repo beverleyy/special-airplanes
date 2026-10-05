@@ -13,16 +13,4 @@ export function chip({ label, name, value, pressed, count }) {
     + `${escapeHtml(label)}${counter}</button>`;
 }
 
-export function accessFormHtml(message) {
-  return `<form class="access" id="access-form">
-    <p class="access__message">${escapeHtml(message)}</p>
-    <label class="field">
-      <span class="field__label">Access code</span>
-      <input class="field__input" id="access-code" type="password" autocomplete="current-password" required>
-    </label>
-    <button class="btn" type="submit">Unlock</button>
-    <a class="access__demo" href="?demo">Or view the demo</a>
-  </form>`;
-}
-
 export const chipRowLabel = text => `<span class="chip-row__label">${escapeHtml(text)}</span>`;

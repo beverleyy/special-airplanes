@@ -14,8 +14,10 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from . import config
 from .config import DELAYED_AFTER_SECONDS, USER_AGENT
-from .errors import LiveryWatchError
+from .cooldown import Cooldown, retry_after_seconds
+from .errors import FR24FormatError, LiveryWatchError
 from .util import dig, local_iso, norm_reg
 
 API = "https://api.flightradar24.com/common/v1"
@@ -42,26 +44,37 @@ Json = dict[str, Any]
 # Client
 
 class FR24Client:
+    def __init__(self, cooldown: Cooldown | None = None, sleep=time.sleep, clock=time.time) -> None:
+        self.cooldown = cooldown if cooldown is not None else Cooldown(config.CACHE_DIR / "fr24-pause.json")
+        self._sleep = sleep
+        self._clock = clock
+
     def get_json(self, url: str) -> Json:
+        """One request, unless requests are paused. A short wait asked for by a 429 is honoured
+        once; anything longer, and every refusal, pauses all Flightradar24 requests."""
+        self.cooldown.check()
         request = urllib.request.Request(url, headers=HEADERS)
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 with urllib.request.urlopen(request, timeout=20) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                    data = json.loads(response.read().decode("utf-8"))
+                self.cooldown.succeeded()
+                return data
             except urllib.error.HTTPError as e:
-                if e.code == 429 and attempt < 2:
-                    time.sleep(5 * (attempt + 1))
-                    continue
+                if e.code == 429:
+                    wait = retry_after_seconds(e.headers.get("Retry-After") if e.headers else None, self._clock())
+                    if attempt == 0 and wait is not None and wait <= config.SHORT_RETRY_MAX_SECONDS:
+                        self._sleep(wait)
+                        continue
+                    raise self.cooldown.rate_limited(wait) from e
                 if e.code in _BLOCKED:
-                    raise LiveryWatchError("Flightradar24 refused the request. It may be rate limiting you; "
-                                           "wait a few minutes and try again.") from e
+                    raise self.cooldown.refused() from e
                 raise LiveryWatchError(f"Flightradar24 returned an error ({e.code}).") from e
             except urllib.error.URLError as e:
                 raise LiveryWatchError("Couldn't reach Flightradar24. Check your internet connection.") from e
             except ValueError as e:
-                raise LiveryWatchError("Flightradar24 sent back something that isn't flight data. "
-                                       "Their site may have changed.") from e
-        raise LiveryWatchError("Flightradar24 kept rate limiting. Wait a few minutes and try again.")
+                raise FR24FormatError("the answer wasn't JSON") from e
+        raise self.cooldown.rate_limited(None)
 
     def airport_board(self, code: str, mode: str, page: int, timestamp: int, details: bool = True) -> Json:
         plugins = [("plugin[]", "schedule")] + ([("plugin[]", "details")] if details else [])
@@ -97,6 +110,53 @@ class FR24Client:
             return self.get_json(f"{LIVE_FEED}?{query}")
         except LiveryWatchError:
             return None
+
+
+# Format checks
+
+FORMAT_FAILURE_SHARE = 0.5
+
+
+def check_board_response(response: Any, mode: str) -> tuple[Json, Json, list]:
+    """The plugin data, schedule, and flight rows of an airport board page, or FR24FormatError."""
+    if not isinstance(response, dict) or not isinstance(dig(response, "result", "response"), dict):
+        raise FR24FormatError("airport board has no result")
+    airport = dig(response, "result", "response", "airport")
+    if not isinstance(airport, dict) or not isinstance(airport.get("pluginData"), dict):
+        raise FR24FormatError("airport board has no plugin data")
+    plugin_data = airport["pluginData"]
+    schedule = dig(plugin_data, "schedule", mode)
+    if schedule is None:
+        return plugin_data, {}, []
+    if not isinstance(schedule, dict):
+        raise FR24FormatError(f"{mode} board isn't an object")
+    items = schedule.get("data") or []
+    if not isinstance(items, list):
+        raise FR24FormatError(f"{mode} board rows aren't a list")
+    return plugin_data, schedule, items
+
+
+def _row_has_shape(item: Any) -> bool:
+    flight = item.get("flight", item) if isinstance(item, dict) else None
+    return isinstance(flight, dict) and isinstance(flight.get("time"), dict) and isinstance(flight.get("identification"), dict)
+
+
+def check_parsed_page(items: list, flights: list[Json], mode: str) -> None:
+    """Rows that are missing their times or flight numbers mean the format changed, not a quiet day."""
+    if not items or flights:
+        return
+    malformed = sum(not _row_has_shape(item) for item in items)
+    if malformed / len(items) > FORMAT_FAILURE_SHARE:
+        raise FR24FormatError(f"{mode} rows are missing their times or flight numbers")
+
+
+def check_history_response(response: Any) -> list:
+    data = dig(response, "result", "response", "data")
+    if data is None and isinstance(dig(response, "result", "response"), dict):
+        return []
+    if not isinstance(data, list):
+        raise FR24FormatError("aircraft history has no flight list")
+    return data
 
 
 # Parsing
@@ -265,6 +325,17 @@ def parse_history_flight(flight: Json) -> Json | None:
         "arr": arr,
         "state": _history_state(flight, dep, arr),
     }
+
+
+FEED_META_KEYS = {"full_count", "version", "stats", "selected-aircraft"}
+
+
+def feed_looks_valid(feed: Any) -> bool:
+    """The live feed is an object of aircraft rows; rows that are too short mean the format changed."""
+    if not isinstance(feed, dict):
+        return False
+    rows = [v for k, v in feed.items() if k not in FEED_META_KEYS]
+    return all(isinstance(r, list) and len(r) > 15 for r in rows)
 
 
 def parse_live_all(feed: Json | None) -> dict[str, Json]:

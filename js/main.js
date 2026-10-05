@@ -5,7 +5,8 @@ import { demoSource } from "./demo.js";
 import { activeRegs, buildVisits, isGone, selectVisits, splitNowAndLater } from "./flights.js";
 import { escapeHtml, normReg } from "./format.js";
 import { filterLive, mergeLive, splitLive } from "./live.js";
-import { accessFormHtml, holdSign, progress } from "./views/common.js";
+import { accessCardHtml, modeSwitchHtml } from "./views/access.js";
+import { holdSign, progress } from "./views/common.js";
 import { creditHtml, demoCreditHtml, liveCreditHtml } from "./views/credit.js";
 import { directionFilterHtml, typeFilterHtml } from "./views/filters.js";
 import { liveEmptyHtml, liveResultsHtml, liveSummaryHtml } from "./views/live.js";
@@ -37,6 +38,7 @@ const el = {
   directionFilter: $("direction-filter"),
   typeFilter: $("type-filter"),
   status: $("status"),
+  modeSwitch: $("mode-switch"),
   searchTitle: $("search-title"),
   summary: $("summary"),
   results: $("results"),
@@ -81,7 +83,7 @@ function applySummary(summary) {
 
 function renderCredit() {
   if (state.source.kind === "live") el.credit.innerHTML = liveCreditHtml(state.database);
-  else if (state.source.isDemo) el.credit.innerHTML = demoCreditHtml(state.source.recording);
+  else if (state.source.isDemo) el.credit.innerHTML = demoCreditHtml(state.source.recording, { liveAvailable: !!WORKER_URL });
   else el.credit.innerHTML = creditHtml(state.database, state.registry.size);
   if (state.notice) el.credit.insertAdjacentHTML("beforeend", `<span class="credit__warn">${escapeHtml(state.notice)}</span>`);
 }
@@ -223,7 +225,12 @@ async function searchAirport({ fresh = false } = {}) {
     if (state.source.kind === "live") await loadLiveBoard(code, search);
     else await loadScheduledBoard(code, search, fresh);
   } catch (error) {
-    if (search === state.search) el.status.innerHTML = holdSign(error.message);
+    if (error instanceof AccessCodeError) {
+      forgetAccessCode();
+      showAccessCard({ reason: "Your access code isn't accepted anymore." });
+    } else if (search === state.search) {
+      el.status.innerHTML = holdSign(error.message);
+    }
   } finally {
     if (search === state.search) {
       el.airportSubmit.disabled = false;
@@ -350,15 +357,102 @@ async function connect() {
   return { source, summary: await source.summary(), notice };
 }
 
-function askForAccessCode(message) {
-  el.status.innerHTML = accessFormHtml(message);
-  const form = document.getElementById("access-form");
-  form.addEventListener("submit", event => {
-    event.preventDefault();
-    saveAccessCode(document.getElementById("access-code").value);
-    location.reload();
-  });
+// Access code and Demo / Live switch
+
+/** The demo only has its recorded airport, so switching to it starts fresh on that recording. */
+function switchTo(mode) {
+  const url = new URL(location.href);
+  url.searchParams.delete("code");
+  if (mode === "demo") {
+    url.search = "";
+    url.searchParams.set("demo", "");
+  } else {
+    url.searchParams.delete("demo");
+  }
+  location.assign(url);
+}
+
+/** Shown when this site has a live version: on the static site, not when served by the local server. */
+function renderModeSwitch({ unlocked = false } = {}) {
+  const hasChoice = !!WORKER_URL && (state.source.kind === "live" || state.source.isDemo);
+  el.modeSwitch.hidden = !hasChoice;
+  if (hasChoice) el.modeSwitch.innerHTML = modeSwitchHtml(state.source.isDemo ? "demo" : "live", { unlocked });
+}
+
+function showAccessCard(options) {
+  Object.assign(state, { board: null, nearby: null, inbound: null });
+  el.filters.hidden = true;
+  el.summary.innerHTML = "";
+  el.results.innerHTML = "";
+  el.status.innerHTML = accessCardHtml(options);
+  renderModeSwitch();
   document.getElementById("access-code").focus();
+}
+
+function accessError(message) {
+  const error = document.getElementById("access-error");
+  error.textContent = message;
+  error.hidden = false;
+  const input = document.getElementById("access-code");
+  input.setAttribute("aria-invalid", "true");
+  input.select();
+}
+
+/** Checks the code with the Worker, then carries on into the live site without a reload. */
+async function unlock(code) {
+  const submit = document.getElementById("access-submit");
+  if (!code) {
+    accessError("Enter the access code you were given.");
+    return;
+  }
+  submit.disabled = true;
+  submit.textContent = "Checking…";
+  saveAccessCode(code);
+  try {
+    const summary = await state.source.summary();
+    el.status.innerHTML = "";
+    await begin(summary);
+  } catch (error) {
+    if (error instanceof AccessCodeError) {
+      forgetAccessCode();
+      accessError("That code didn't work. Check it and try again.");
+    } else {
+      accessError(`Couldn't reach the live data right now (${error.message}). Try again in a moment.`);
+    }
+    submit.disabled = false;
+    submit.textContent = "Unlock live data";
+  }
+}
+
+function bindAccessEvents() {
+  el.status.addEventListener("submit", event => {
+    if (event.target.id !== "access-form") return;
+    event.preventDefault();
+    unlock(document.getElementById("access-code").value.trim());
+  });
+  el.status.addEventListener("click", event => {
+    const reveal = event.target.closest("[data-action='toggle-code']");
+    if (reveal) {
+      const input = document.getElementById("access-code");
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      reveal.textContent = showing ? "Show" : "Hide";
+      reveal.setAttribute("aria-pressed", String(!showing));
+      input.focus();
+      return;
+    }
+    if (event.target.closest("[data-mode='demo']")) switchTo("demo");
+  });
+  el.modeSwitch.addEventListener("click", event => {
+    if (event.target.closest("[data-action='forget-code']")) {
+      forgetAccessCode();
+      switchTo("live");
+      return;
+    }
+    const option = event.target.closest("[data-mode]");
+    const current = state.source.isDemo ? "demo" : "live";
+    if (option && option.dataset.mode !== current) switchTo(option.dataset.mode);
+  });
 }
 
 /** Access links carry the code as ?code=…; save it and take it out of the address bar. */
@@ -369,19 +463,11 @@ function takeCodeFromLink() {
   setParam("code", null);
 }
 
-async function start() {
-  takeCodeFromLink();
-  bindEvents();
-  const { source, summary, needsCode, notice } = await connect();
-  state.source = source;
-  state.notice = notice || "";
-  if (source.kind === "live") el.searchTitle.textContent = "Special liveries around right now";
+/** Everything after the data source is ready: credit, filters, and any airport or tail in the link. */
+async function begin(summary) {
+  const { source } = state;
   el.localNote.hidden = source.kind !== "scheduled" || source.isDemo;
-  if (needsCode) {
-    forgetAccessCode();
-    askForAccessCode(needsCode);
-    return;
-  }
+  renderModeSwitch({ unlocked: source.kind === "live" });
   applySummary(summary);
   watchImport();
 
@@ -392,6 +478,22 @@ async function start() {
   }
   const tail = getParam("tail");
   if (tail) lookupTail(tail);
+}
+
+async function start() {
+  takeCodeFromLink();
+  bindEvents();
+  bindAccessEvents();
+  const { source, summary, needsCode, notice } = await connect();
+  state.source = source;
+  state.notice = notice || "";
+  if (source.kind === "live") el.searchTitle.textContent = "Special liveries around right now";
+  if (needsCode) {
+    forgetAccessCode();
+    showAccessCard();
+    return;
+  }
+  await begin(summary);
 }
 
 start().catch(error => {

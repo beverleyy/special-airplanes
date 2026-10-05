@@ -1,0 +1,22 @@
+{"result": {"request": {"code": "SFO"}, "response": {"airport": {"pluginData": {
+  "details": {"name": "San Francisco International Airport",
+              "position": {"latitude": 37.618999, "longitude": -122.375},
+              "timezone": {"name": "America/Los_Angeles", "offset": -25200, "abbr": "PDT"}},
+  "schedule": {"arrivals": {"item": {"current": 2, "total": 2, "limit": 100}, "page": {"current": 1, "total": 1},
+    "data": [
+      {"flight": {"identification": {"id": "3a1b2c", "number": {"default": "NH7", "alternative": null}, "callsign": "ANA7"},
+        "status": {"live": true, "text": "Estimated 13:22", "generic": {"status": {"text": "estimated", "type": "arrival"}}},
+        "aircraft": {"model": {"code": "B789", "text": "Boeing 787-9 Dreamliner"}, "registration": "JA894A"},
+        "owner": {"name": "All Nippon Airways", "code": {"iata": "NH", "icao": "ANA"}},
+        "airline": {"name": "ANA (Pikachu Jet NH)", "code": {"iata": "NH", "icao": "ANA"}},
+        "airport": {"origin": {"code": {"iata": "NRT", "icao": "RJAA"}, "name": "Tokyo Narita International Airport"}},
+        "time": {"scheduled": {"departure": 1790900000, "arrival": 1790935200},
+                 "real": {"departure": 1790900900, "arrival": null},
+                 "estimated": {"departure": null, "arrival": 1790935920}}}},
+      {"flight": {"identification": {"id": "3a1b2d", "number": {"default": "UA1"}, "callsign": "UAL1"},
+        "status": {"live": false, "text": "Canceled", "generic": {"status": {"text": "canceled", "type": "arrival"}}},
+        "aircraft": {"model": {"code": "B77W", "text": "Boeing 777-300ER"}, "registration": "N2331U"},
+        "airline": {"name": "United Airlines", "code": {"iata": "UA", "icao": "UAL"}},
+        "airport": {"origin": {"code": {"iata": "SIN", "icao": "WSSS"}, "name": "Singapore Changi Airport"}},
+        "time": {"scheduled": {"departure": 1790890000, "arrival": 1790938000}, "real": {}, "estimated": {}}}}
+    ]}}}}}}}

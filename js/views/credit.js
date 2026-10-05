@@ -11,14 +11,15 @@ function recordingDescription({ airport, recordedAt }) {
   return `a recording of ${escapeHtml(airport.code)} from ${escapeHtml(day)} at ${time} ${escapeHtml(airport.tz || "")}`;
 }
 
-export function demoCreditHtml(recording) {
+export function demoCreditHtml(recording, { liveAvailable = false } = {}) {
+  const next = liveAvailable
+    ? "Have an access code? Switch to Live above."
+    : "Run Livery Watch yourself for live flights at any airport.";
   if (!recording) {
-    return `<b>Demo with sample data.</b> Run Livery Watch yourself for live flights at any airport, `
-      + `with livery data from the ${databaseLink()}.`;
+    return `<b>Demo with sample data.</b> Livery data from the ${databaseLink()}. ${next}`;
   }
   return `<b>Demo: ${recordingDescription(recording)}</b>, replayed from that moment. `
-    + `Flight data from Flightradar24; livery data from the ${databaseLink()}. `
-    + "Run Livery Watch yourself for live flights at any airport.";
+    + `Flight data from Flightradar24; livery data from the ${databaseLink()}. ${next}`;
 }
 
 export function liveCreditHtml(database) {

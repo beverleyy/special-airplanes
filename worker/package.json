@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "deploy:local": "sed \"s/REPLACE_WITH_KV_NAMESPACE_ID/$KV_NAMESPACE_ID/\" wrangler.toml > wrangler.local.toml && wrangler deploy --config wrangler.local.toml",
+    "deploy:local": "node scripts/deploy-local.mjs",
     "test": "node --test"
   },
   "devDependencies": {

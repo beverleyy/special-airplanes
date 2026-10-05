@@ -1,0 +1,13 @@
+{"result": {"request": {"query": "N933AK", "fetchBy": "reg"}, "response": {"item": {"current": 1}, "data": [
+  {"identification": {"number": {"default": "AS1315"}, "callsign": "ASA1315"},
+   "status": {"live": false, "generic": {"status": {"text": "scheduled"}}},
+   "aircraft": {"model": {"text": "Boeing 737 MAX 9"}, "registration": "N933AK"},
+   "owner": {"name": "Alaska Airlines", "code": {"iata": "AS"}},
+   "airline": {"name": "Alaska Airlines (Seattle Kraken Livery)", "code": {"iata": "AS"}},
+   "airport": {"origin": {"code": {"iata": "SFO"}, "name": "San Francisco International Airport",
+                          "timezone": {"offset": -25200, "abbr": "PDT"}},
+               "destination": {"code": {"iata": "PDX"}, "name": "Portland International Airport",
+                               "timezone": {"offset": -25200, "abbr": "PDT"}}},
+   "time": {"scheduled": {"departure": 1790940000, "arrival": 1790946000},
+            "estimated": {"departure": 1790941200}, "real": {}}}
+]}}}

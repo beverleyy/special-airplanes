@@ -39,7 +39,9 @@ class BoardTest(unittest.TestCase):
     def make_app(self, pages):
         path = Path(tempfile.mkdtemp()) / "data.json"
         store = Store(path)
-        return LiveryWatch(store, LiveryImporter(store, []), FakeClient(pages), sleep=lambda _: None)
+        self.cache_dir = Path(tempfile.mkdtemp()) / "cache"
+        return LiveryWatch(store, LiveryImporter(store, []), FakeClient(pages), sleep=lambda _: None,
+                           cache_dir=self.cache_dir)
 
     def test_reads_both_boards_and_stops_at_horizon(self):
         pages = {
@@ -88,6 +90,32 @@ class BoardTest(unittest.TestCase):
         board = self.make_app(pages).board_complete("SIN")
         self.assertEqual([f["number"] for f in board["flights"]], ["SQ317", "SQ1"])
         self.assertEqual(board["counts"]["arr"], 2)
+
+    def test_refresh_rereads_only_the_next_few_hours(self):
+        def board(numbers_and_hours):
+            return [[item(n, "", "arrival", h * 3600) for n, h in page] for page in numbers_and_hours]
+        pages = {"arrivals": board([[("A1", 1), ("A2", 2)], [("A3", 4), ("A4", 8)], [("A5", 20)]]),
+                 "departures": [[]]}
+        app = self.make_app(pages)
+        first = app.board_complete("SFO")
+        self.assertEqual([f["number"] for f in first["flights"]], ["A1", "A2", "A3", "A4", "A5"])
+        app.client.calls.clear()
+        app._jobs["SFO"].started -= 120  # past the one-minute refresh guard
+        pages["arrivals"][0][0] = item("A1", "N1", "arrival", 3600)  # a tail got assigned
+        refreshed = app.board_complete("SFO", fresh=True)
+        self.assertEqual([c[:2] for c in app.client.calls if c[0] == "arrivals"], [("arrivals", 1), ("arrivals", 2)])
+        self.assertEqual([f["number"] for f in refreshed["flights"]], ["A1", "A2", "A3", "A4", "A5"])
+        self.assertEqual(refreshed["flights"][0]["reg"], "N1")
+
+    def test_boards_survive_a_restart(self):
+        pages = {"arrivals": [[item("A1", "JA894A", "arrival", 600)]], "departures": [[]]}
+        app = self.make_app(pages)
+        app.board_complete("SFO")
+        restarted = LiveryWatch(app.store, app.importer, FakeClient(pages), sleep=lambda _: None,
+                                cache_dir=self.cache_dir)
+        board = restarted.board("SFO")
+        self.assertEqual([f["number"] for f in board["flights"]], ["A1"])
+        self.assertEqual(restarted.client.calls, [])
 
     def test_caches_boards(self):
         app = self.make_app({"arrivals": [[]], "departures": [[]]})
